@@ -378,6 +378,25 @@ fn navbar(ctx: &Ctx<'_>) -> Element {
                     .class("nav__end")
                     .child(lang_switch(ctx))
                     .child(
+                        a().class("nav__mail")
+                            .href(ctx.home("connect"))
+                            .attr(
+                                "aria-label",
+                                ctx.t(&[
+                                    "Connecter ma boîte mail",
+                                    "Connect my mailbox",
+                                    "Conectar mi buzón",
+                                ]),
+                            )
+                            .attr("data-cursor", ctx.t(&["Mail", "Mail", "Correo"]))
+                            .child(icon("mail"))
+                            .child(span().class("nav__mail-label").text(ctx.t(&[
+                                "Connexion",
+                                "Sign in",
+                                "Conectar",
+                            ]))),
+                    )
+                    .child(
                         btn(ctx.home("demo"), "btn--primary btn--sm nav__cta")
                             .child(icon("radar"))
                             .child(span().text(ctx.t(&["Essayer", "Try it", "Probar"]))),
@@ -650,7 +669,7 @@ fn site_footer(ctx: &Ctx<'_>) -> Element {
     ];
     footer()
         .class("footer")
-        .child(div().class("footer__wave").attr("aria-hidden", "true").child(span()).child(span()))
+        .child(div().class("footer__beam").attr("aria-hidden", "true").child(span().class("footer__line")).child(span().class("footer__comet")).child(span().class("footer__halo")))
         .child(
             container()
                 .child(
@@ -754,6 +773,7 @@ pub fn home(ctx: &Ctx<'_>) -> Page {
         .child(modules(ctx))
         .child(how(ctx))
         .child(demo(ctx))
+        .child(connect(ctx))
         .child(report(ctx))
         .child(sender(ctx))
         .child(links(ctx))
@@ -1225,6 +1245,33 @@ fn demo(ctx: &Ctx<'_>) -> Element {
     )
 }
 
+fn connect(ctx: &Ctx<'_>) -> Element {
+    let t = |x: &T3| ctx.t(x);
+    section_("connect", "connect").child(
+        container()
+            .child(head(
+                "04",
+                t(&["Connexion", "Sign in", "Conexión"]),
+                t(&[
+                    "Connectez votre boîte mail",
+                    "Connect your mailbox",
+                    "Conecta tu buzón de correo",
+                ]),
+                Some(t(&[
+                    "Gmail, Outlook, iCloud Mail, Yahoo ou n’importe quelle boîte IMAP : MailZen se connecte par une intégration autorisée, en lecture seule, et analyse vos emails sur votre appareil.",
+                    "Gmail, Outlook, iCloud Mail, Yahoo or any IMAP mailbox: MailZen connects through an authorized integration, read-only, and analyzes your emails on your device.",
+                    "Gmail, Outlook, iCloud Mail, Yahoo o cualquier buzón IMAP: MailZen se conecta mediante una integración autorizada, en modo solo lectura, y analiza tus correos en tu dispositivo.",
+                ])),
+            ))
+            .child(
+                div()
+                    .class("connect__frame")
+                    .attr("data-reveal", "")
+                    .child(island("connect", ctx.lang().code(), islands::connect)),
+            ),
+    )
+}
+
 /// A gauge drawn by CSS (`--score`), animated when revealed.
 fn gauge(score: u32, class: &str) -> Element {
     div()
@@ -1255,7 +1302,7 @@ fn report(ctx: &Ctx<'_>) -> Element {
     section_("report", "report").child(
         container()
             .child(head(
-                "04",
+                "05",
                 t(&["Le rapport de sécurité", "The security report", "El informe de seguridad"]),
                 t(&["Extrêmement détaillé, simple à comprendre", "Extremely detailed, easy to understand", "Muy detallado, fácil de entender"]),
                 None,
@@ -1358,7 +1405,7 @@ fn sender(ctx: &Ctx<'_>) -> Element {
     section_("sender", "sender").child(
         container()
             .child(head(
-                "05",
+                "06",
                 "Sender Intelligence",
                 t(&["Qui vous écrit vraiment ?", "Who is really writing to you?", "¿Quién te escribe realmente?"]),
                 Some(t(&[
@@ -1455,7 +1502,7 @@ fn links(ctx: &Ctx<'_>) -> Element {
     section_("links", "links-section").child(
         container()
             .child(head(
-                "06",
+                "07",
                 "Link Guard",
                 t(&["Chaque lien, décortiqué", "Every link, taken apart", "Cada enlace, al detalle"]),
                 Some(t(&[
@@ -1553,7 +1600,7 @@ fn files(ctx: &Ctx<'_>) -> Element {
     section_("files", "files").child(
         container()
             .child(head(
-                "07",
+                "08",
                 "Attachment Guard",
                 t(&["Les pièces jointes, passées au crible", "Attachments, screened", "Los adjuntos, examinados"]),
                 Some(t(&[
@@ -1660,7 +1707,7 @@ fn screens(ctx: &Ctx<'_>) -> Element {
     section_("screens", "screens").child(
         container()
             .child(head(
-                "08",
+                "09",
                 "ScreenScan & QR Guard",
                 t(&["Une capture, un QR code : c’est analysé", "A screenshot, a QR code: analyzed", "Una captura, un código QR: analizado"]),
                 Some(t(&[
@@ -1746,7 +1793,7 @@ fn zenai(ctx: &Ctx<'_>) -> Element {
     section_("zenai", "zenai").child(
         container()
             .child(head(
-                "09",
+                "10",
                 "ZenAI",
                 t(&["Un assistant qui explique, sans jamais inventer", "An assistant that explains, never invents", "Un asistente que explica, sin inventar nunca"]),
                 Some(t(&[
@@ -1825,7 +1872,7 @@ fn manipulation(ctx: &Ctx<'_>) -> Element {
     section_("manipulation", "manipulation").child(
         container()
             .child(head(
-                "10",
+                "11",
                 "Social Engineering Detector",
                 t(&["Démasquer la manipulation", "Unmasking manipulation", "Desenmascarar la manipulación"]),
                 Some(t(&[
@@ -1876,7 +1923,7 @@ fn scams(ctx: &Ctx<'_>) -> Element {
     section_("scams", "scams").child(
         container()
             .child(head(
-                "11",
+                "12",
                 "Scam Intelligence",
                 t(&[
                     "Toutes les familles d’arnaques",
@@ -1932,7 +1979,7 @@ fn sos(ctx: &Ctx<'_>) -> Element {
     section_("sos", "sos-section").child(
         container()
             .child(head(
-                "12",
+                "13",
                 "SOS Cyber",
                 t(&["J’ai déjà cliqué. Et maintenant ?", "I already clicked. Now what?", "Ya hice clic. ¿Y ahora?"]),
                 Some(t(&[
@@ -1971,7 +2018,7 @@ fn ecosystem(ctx: &Ctx<'_>) -> Element {
     section_("ecosystem", "ecosystem").child(
         container()
             .child(head(
-                "13",
+                "14",
                 t(&["Écosystème", "Ecosystem", "Ecosistema"]),
                 t(&["Répondre, vérifier, protéger, apprendre", "Reply, verify, protect, learn", "Responder, verificar, proteger, aprender"]),
                 None,
@@ -2046,7 +2093,7 @@ fn radar(ctx: &Ctx<'_>) -> Element {
     section_("radar", "radar-section").child(
         container()
             .child(head(
-                "14",
+                "15",
                 "MailZen Radar",
                 t(&["Votre protection, d’un coup d’œil", "Your protection at a glance", "Tu protección de un vistazo"]),
                 Some(t(&[
@@ -2123,7 +2170,7 @@ fn learn(ctx: &Ctx<'_>) -> Element {
     section_("learn", "learn").child(
         container()
             .child(head(
-                "15",
+                "16",
                 "ZenLearn",
                 t(&["Vrai ou faux lien ? À vous de jouer", "Real or fake link? Your turn", "¿Enlace real o falso? Te toca"]),
                 Some(t(&[
@@ -2156,7 +2203,7 @@ fn privacy(ctx: &Ctx<'_>) -> Element {
     section_("privacy", "privacy").child(
         container()
             .child(head(
-                "16",
+                "17",
                 "PrivacyZen",
                 t(&["La confidentialité avant tout", "Privacy first", "La privacidad ante todo"]),
                 Some(t(&[
@@ -2209,7 +2256,7 @@ fn architecture(ctx: &Ctx<'_>) -> Element {
     section_("architecture", "architecture").child(
         container()
             .child(head(
-                "17",
+                "18",
                 t(&["Architecture", "Architecture", "Arquitectura"]),
                 t(&["Un moteur Rust commun, des apps natives", "One Rust engine, native apps", "Un motor Rust común, apps nativas"]),
                 Some(t(&[
@@ -2282,7 +2329,7 @@ fn platforms(ctx: &Ctx<'_>) -> Element {
     section_("platforms", "platforms").child(
         container()
             .child(head(
-                "18",
+                "19",
                 t(&[
                     "Contraintes réelles",
                     "Real constraints",
@@ -2365,7 +2412,7 @@ fn roadmap(ctx: &Ctx<'_>) -> Element {
     section_("roadmap", "roadmap").child(
         container()
             .child(head(
-                "19",
+                "20",
                 t(&["Feuille de route", "Roadmap", "Hoja de ruta"]),
                 t(&[
                     "Neuf étapes, un moteur testable dès le début",
@@ -2415,7 +2462,7 @@ fn pricing(ctx: &Ctx<'_>) -> Element {
     section_("pricing", "pricing-section").child(
         container()
             .child(head(
-                "20",
+                "21",
                 t(&["Tarifs", "Pricing", "Precios"]),
                 t(&["Freemium, sans publicité intrusive", "Freemium, without intrusive ads", "Freemium, sin publicidad intrusiva"]),
                 None,
@@ -2434,7 +2481,7 @@ fn faq(ctx: &Ctx<'_>) -> Element {
     section_("faq", "faq").child(
         container()
             .child(head(
-                "21",
+                "22",
                 "FAQ",
                 t(&["Vos questions", "Your questions", "Tus preguntas"]),
                 None,

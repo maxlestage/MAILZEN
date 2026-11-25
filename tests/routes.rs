@@ -33,7 +33,7 @@ async fn every_route_answers() {
     }
     for lang in Lang::ALL {
         let html = client.get(&format!("/{}/", lang.code())).await.text();
-        for island in ["scan", "sos", "quiz", "pricing"] {
+        for island in ["scan", "connect", "sos", "quiz", "pricing"] {
             assert!(
                 html.contains(&format!("data-island=\"{island}\"")),
                 "{island}"
