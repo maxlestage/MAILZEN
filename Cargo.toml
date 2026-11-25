@@ -1,0 +1,66 @@
+[package]
+name = "mailzen-site"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+license-file = "LICENSE"
+description = "The presentation website of MailZen, the smart guardian of your emails, written in Rust with Paquets."
+
+# The library holds what the server and the browser share (texts, routes, islands, the
+# demo analysis engine) and, compiled to WebAssembly, the browser bundle. The binary is
+# the server (and the static export for GitHub Pages).
+[lib]
+name = "mailzen_site"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "mailzen-site"
+path = "src/main.rs"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+paquets = { git = "https://github.com/maxlestage/Paquets" }
+tokio = { version = "1.54", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+paquets = { git = "https://github.com/maxlestage/Paquets", default-features = false, features = ["client"] }
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "0.4.80"
+js-sys = "0.3.107"
+web-sys = { version = "0.3.107", features = [
+  "AddEventListenerOptions",
+  "CanvasRenderingContext2d",
+  "CssStyleDeclaration",
+  "Document",
+  "DomRect",
+  "DomStringMap",
+  "DomTokenList",
+  "Element",
+  "EventTarget",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "IntersectionObserver",
+  "IntersectionObserverEntry",
+  "IntersectionObserverInit",
+  "KeyboardEvent",
+  "MediaQueryList",
+  "MouseEvent",
+  "NodeList",
+  "PointerEvent",
+  "Storage",
+  "Window",
+] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# The browser bundle: `cargo build --lib --target wasm32-unknown-unknown --profile wasm-release`.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+# Not `strip = true`: wasm-bindgen reads the `target_features` section.
+strip = false

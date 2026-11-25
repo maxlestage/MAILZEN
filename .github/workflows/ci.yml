@@ -1,0 +1,80 @@
+# Tests every push, then merges the branch into master automatically.
+#
+# - check: format, clippy (server and browser), tests, the WebAssembly bundle and
+#   the static export of the site;
+# - merge: when everything is green, the branch is merged into master (except master
+#   itself and branches named wip/...), then GitHub Pages and Heroku are deployed: a
+#   push made by a workflow starts no other workflow, so they are started explicitly.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Site (fmt, clippy, tests, WebAssembly, export)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - name: Clippy (server)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (browser, wasm32)
+        run: cargo clippy --lib --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo test
+      - name: Islands and animations (WebAssembly)
+        run: ./build-wasm.sh
+      - name: Static export
+        run: BASE_PATH="/${{ github.event.repository.name }}" cargo run --release -- export dist
+
+  merge:
+    name: Merge into master
+    needs: [check]
+    if: >-
+      github.event_name == 'push' && github.ref_name != 'master' &&
+      !startsWith(github.ref_name, 'wip/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    concurrency:
+      group: merge-into-master
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Merge ${{ github.ref_name }}
+        env:
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge-base --is-ancestor "$SHA" HEAD; then
+            echo "$BRANCH is already in master."
+            exit 0
+          fi
+          git merge --no-ff --no-edit "$SHA" -m "Merge branch '$BRANCH' into master (auto-merge)"
+          git push origin HEAD:master
+          echo "::notice title=Auto-merge::$BRANCH merged into master"
+      # A push made with GITHUB_TOKEN starts no workflow: deploy by hand.
+      - name: Deploy master (GitHub Pages, Heroku)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run pages.yml --ref master --repo "$GITHUB_REPOSITORY"
+          gh workflow run heroku.yml --ref master --repo "$GITHUB_REPOSITORY"

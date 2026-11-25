@@ -1,0 +1,14 @@
+{
+  "name": "MailZen",
+  "description": "The presentation website of MailZen, the smart guardian of your emails. Written in Rust with Paquets.",
+  "repository": "https://github.com/maxlestage/MAILZEN",
+  "logo": "https://raw.githubusercontent.com/maxlestage/MAILZEN/master/public/icons/icon-192.png",
+  "keywords": ["rust", "paquets", "webassembly", "security", "pwa"],
+  "stack": "heroku-26",
+  "buildpacks": [
+    {
+      "url": "emk/rust"
+    }
+  ],
+  "success_url": "/"
+}

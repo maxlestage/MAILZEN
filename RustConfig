@@ -1,0 +1,9 @@
+# Heroku with the emk/rust buildpack
+# (https://elements.heroku.com/buildpacks/emk/heroku-buildpack-rust).
+#
+# The buildpack sources this file, installs Rust, then would run a plain `cargo build
+# --release`. Its build is skipped: heroku-build.sh builds the server and the browser
+# bundle (WebAssembly) instead, once Rust is installed.
+VERSION=stable
+RUST_SKIP_BUILD=1
+trap 'status=$?; if [ "$status" -eq 0 ]; then bash "$BUILD_DIR/heroku-build.sh" || exit 1; fi' EXIT
