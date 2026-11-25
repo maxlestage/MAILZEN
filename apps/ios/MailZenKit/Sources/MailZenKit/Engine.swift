@@ -1,0 +1,517 @@
+import Foundation
+
+// A deterministic analysis engine, independent of any AI: rules on the sender, the
+// links, the attachments and the manipulation techniques of a message. The same rules
+// as the demo of the website (src/engine.rs), plus the authentication results (SPF,
+// DKIM, DMARC) and the reply address of real emails.
+
+/// The four verdicts of a report.
+public enum Verdict: String, CaseIterable, Codable, Sendable {
+    case safe, caution, suspicious, danger
+
+    public static func of(score: Int) -> Verdict {
+        switch score {
+        case ..<20: .safe
+        case ..<45: .caution
+        case ..<70: .suspicious
+        default: .danger
+        }
+    }
+
+    public var title: T3 {
+        switch self {
+        case .safe: T3("Aucun risque notable détecté", "No notable risk detected", "Ningún riesgo notable detectado")
+        case .caution: T3("Vigilance", "Caution", "Precaución")
+        case .suspicious: T3("Suspect", "Suspicious", "Sospechoso")
+        case .danger: T3("Danger élevé", "High danger", "Peligro elevado")
+        }
+    }
+
+    public var summary: T3 {
+        switch self {
+        case .safe: T3(
+            "Les contrôles n’ont pas relevé de signal important. Cela ne garantit pas l’innocuité.",
+            "The checks found no significant signal. This does not guarantee it is harmless.",
+            "Los controles no detectaron señales importantes. Eso no garantiza que sea inofensivo.")
+        case .caution: T3(
+            "Quelques anomalies ou éléments à vérifier.",
+            "A few anomalies or things to check.",
+            "Algunas anomalías o elementos que verificar.")
+        case .suspicious: T3(
+            "Plusieurs indicateurs inquiétants.",
+            "Several worrying indicators.",
+            "Varios indicadores preocupantes.")
+        case .danger: T3(
+            "Des éléments sérieux indiquent un risque de fraude ou d’attaque.",
+            "Serious elements point to a risk of fraud or attack.",
+            "Elementos serios indican un riesgo de fraude o ataque.")
+        }
+    }
+
+    public var advice: T3 {
+        switch self {
+        case .safe: T3(
+            "Les contrôles effectués n’ont pas relevé de signal important. Restez attentif aux demandes inhabituelles.",
+            "The checks found no significant signal. Stay alert to unusual requests.",
+            "Los controles no han encontrado ninguna señal importante. Mantente atento a las peticiones inusuales.")
+        case .caution: T3(
+            "Avant d’agir, contactez l’expéditeur par un canal officiel que vous connaissez.",
+            "Before acting, contact the sender through an official channel you already know.",
+            "Antes de actuar, contacta con el remitente por un canal oficial que ya conozcas.")
+        case .suspicious: T3(
+            "Ne cliquez sur aucun lien, n’ouvrez aucune pièce jointe et vérifiez directement auprès du service concerné.",
+            "Do not click any link, do not open any attachment, and check directly with the service concerned.",
+            "No hagas clic en ningún enlace, no abras ningún adjunto y verifica directamente con el servicio afectado.")
+        case .danger: T3(
+            "Ne cliquez pas, ne répondez pas, ne payez rien. Passez par l’application officielle du service, puis signalez le message.",
+            "Do not click, do not reply, do not pay. Go through the service’s official app, then report the message.",
+            "No hagas clic, no respondas, no pagues nada. Usa la app oficial del servicio y denuncia el mensaje.")
+        }
+    }
+}
+
+/// The families of signals.
+public enum Family: String, CaseIterable, Sendable {
+    case sender, link, file, behavior, identity, technical
+
+    public var label: T3 {
+        switch self {
+        case .sender: T3("Expéditeur", "Sender", "Remitente")
+        case .link: T3("URL", "URL", "URL")
+        case .file: T3("Fichier", "File", "Archivo")
+        case .behavior: T3("Comportement", "Behavior", "Comportamiento")
+        case .identity: T3("Identité", "Identity", "Identidad")
+        case .technical: T3("Technique", "Technical", "Técnica")
+        }
+    }
+}
+
+/// What a rule found.
+public enum Rule: String, CaseIterable, Codable, Sendable {
+    case urgency, threat, sensitiveData, money, secrecy, reward, authority
+    case lookalike, brandMismatch, freeMailer, replyToMismatch, authFailure
+    case shortLink, ipLink, plainHttp, oddTld, deepSubdomains, loginWords
+    case riskyFile, doubleExtension, macro, qrCode
+
+    public var family: Family {
+        switch self {
+        case .urgency, .threat, .sensitiveData, .money, .secrecy, .reward, .qrCode: .behavior
+        case .authority, .brandMismatch: .identity
+        case .lookalike, .freeMailer, .replyToMismatch: .sender
+        case .authFailure: .technical
+        case .shortLink, .ipLink, .plainHttp, .oddTld, .deepSubdomains, .loginWords: .link
+        case .riskyFile, .doubleExtension, .macro: .file
+        }
+    }
+
+    public var weight: Int {
+        switch self {
+        case .urgency: 14
+        case .threat: 14
+        case .sensitiveData: 20
+        case .money: 12
+        case .secrecy: 14
+        case .reward: 12
+        case .authority: 6
+        case .lookalike: 28
+        case .brandMismatch: 22
+        case .freeMailer: 10
+        case .replyToMismatch: 16
+        case .authFailure: 24
+        case .shortLink: 14
+        case .ipLink: 22
+        case .plainHttp: 8
+        case .oddTld: 8
+        case .deepSubdomains: 10
+        case .loginWords: 8
+        case .riskyFile: 22
+        case .doubleExtension: 30
+        case .macro: 18
+        case .qrCode: 8
+        }
+    }
+
+    /// A manipulation technique, shown apart from the technical signals.
+    public var isManipulation: Bool {
+        switch self {
+        case .urgency, .threat, .sensitiveData, .money, .secrecy, .reward, .authority: true
+        default: false
+        }
+    }
+
+    public var title: T3 {
+        switch self {
+        case .urgency: T3("Pression temporelle", "Time pressure", "Presión de tiempo")
+        case .threat: T3("Menace", "Threat", "Amenaza")
+        case .sensitiveData: T3("Demande d’informations sensibles", "Request for sensitive information", "Petición de datos sensibles")
+        case .money: T3("Demande de paiement", "Payment request", "Petición de pago")
+        case .secrecy: T3("Secret exigé", "Secrecy demanded", "Se exige secreto")
+        case .reward: T3("Récompense promise", "Promised reward", "Recompensa prometida")
+        case .authority: T3("Autorité invoquée", "Authority invoked", "Autoridad invocada")
+        case .lookalike: T3("Domaine ressemblant", "Lookalike domain", "Dominio parecido")
+        case .brandMismatch: T3("Marque citée, domaine différent", "Brand named, different domain", "Marca citada, dominio distinto")
+        case .freeMailer: T3("Messagerie gratuite", "Free mailbox", "Correo gratuito")
+        case .replyToMismatch: T3("Adresse de réponse différente", "Different reply address", "Dirección de respuesta distinta")
+        case .authFailure: T3("Authentification en échec", "Authentication failed", "Autenticación fallida")
+        case .shortLink: T3("Lien raccourci", "Shortened link", "Enlace acortado")
+        case .ipLink: T3("Lien vers une adresse IP", "Link to an IP address", "Enlace a una dirección IP")
+        case .plainHttp: T3("Lien non chiffré", "Unencrypted link", "Enlace sin cifrar")
+        case .oddTld: T3("Extension de domaine inhabituelle", "Unusual domain extension", "Extensión de dominio inusual")
+        case .deepSubdomains: T3("Sous-domaines en cascade", "Cascading subdomains", "Subdominios en cascada")
+        case .loginWords: T3("Motif de vérification de compte", "Account verification pattern", "Patrón de verificación de cuenta")
+        case .riskyFile: T3("Pièce jointe à risque", "Risky attachment", "Adjunto de riesgo")
+        case .doubleExtension: T3("Double extension", "Double extension", "Doble extensión")
+        case .macro: T3("Activation de macros demandée", "Macros requested", "Se piden macros")
+        case .qrCode: T3("QR code à scanner", "QR code to scan", "Código QR para escanear")
+        }
+    }
+
+    /// Why it matters, in one sentence.
+    public var explanation: T3 {
+        switch self {
+        case .urgency: T3("Vous presser vous empêche de vérifier.", "Rushing you stops you from checking.", "Meterte prisa te impide verificar.")
+        case .threat: T3("La peur fait agir sans réfléchir.", "Fear makes people act without thinking.", "El miedo hace actuar sin pensar.")
+        case .sensitiveData: T3("Aucun service sérieux ne demande ces informations par email.", "No serious service asks for this by email.", "Ningún servicio serio pide estos datos por correo.")
+        case .money: T3("Un paiement demandé sous pression est un signal classique d’arnaque.", "A payment requested under pressure is a classic scam signal.", "Un pago pedido bajo presión es una señal clásica de estafa.")
+        case .secrecy: T3("Exiger le secret sert à vous isoler de ceux qui vous alerteraient.", "Demanding secrecy isolates you from those who would warn you.", "Exigir secreto sirve para aislarte de quien te advertiría.")
+        case .reward: T3("Un gain inattendu sert d’appât.", "An unexpected gain is bait.", "Una ganancia inesperada es un cebo.")
+        case .authority: T3("Se réclamer d’une autorité rend la demande plus crédible.", "Claiming authority makes the request more credible.", "Invocar una autoridad hace la petición más creíble.")
+        case .lookalike: T3("Un caractère imite un autre pour tromper l’œil.", "A character imitates another to fool the eye.", "Un carácter imita a otro para engañar a la vista.")
+        case .brandMismatch: T3("Le lien ne mène pas au domaine de la marque citée.", "The link does not lead to the named brand’s domain.", "El enlace no lleva al dominio de la marca citada.")
+        case .freeMailer: T3("Une organisation officielle n’écrit pas depuis une messagerie gratuite.", "An official organization does not write from a free mailbox.", "Una organización oficial no escribe desde un correo gratuito.")
+        case .replyToMismatch: T3("Votre réponse partirait vers une autre adresse que l’expéditeur.", "Your reply would go to another address than the sender’s.", "Tu respuesta iría a otra dirección distinta del remitente.")
+        case .authFailure: T3("Le serveur n’a pas pu confirmer que l’email vient bien de ce domaine.", "The server could not confirm the email really comes from this domain.", "El servidor no pudo confirmar que el correo viene de ese dominio.")
+        case .shortLink: T3("Un lien raccourci cache sa vraie destination.", "A short link hides its real destination.", "Un enlace acortado oculta su verdadero destino.")
+        case .ipLink: T3("Les vrais services utilisent un nom de domaine, pas une adresse IP.", "Real services use a domain name, not an IP address.", "Los servicios reales usan un dominio, no una IP.")
+        case .plainHttp: T3("Une page sans chiffrement ne devrait jamais demander de données.", "A page without encryption should never ask for data.", "Una página sin cifrado nunca debería pedir datos.")
+        case .oddTld: T3("Cette extension est souvent utilisée par des sites jetables.", "This extension is often used by throwaway sites.", "Esta extensión la usan a menudo sitios desechables.")
+        case .deepSubdomains: T3("Le vrai domaine se cache derrière une cascade de sous-domaines.", "The real domain hides behind a cascade of subdomains.", "El dominio real se esconde tras una cascada de subdominios.")
+        case .loginWords: T3("Les mots « login », « verify » ou « secure » dans un lien sont un leurre fréquent.", "Words like “login”, “verify” or “secure” in a link are a common decoy.", "Palabras como «login», «verify» o «secure» en un enlace son un señuelo frecuente.")
+        case .riskyFile: T3("Ce type de fichier peut exécuter du code.", "This kind of file can run code.", "Este tipo de archivo puede ejecutar código.")
+        case .doubleExtension: T3("Le fichier se fait passer pour un document alors qu’il s’exécute.", "The file poses as a document but runs as a program.", "El archivo se hace pasar por un documento pero se ejecuta.")
+        case .macro: T3("Activer les macros peut installer un logiciel malveillant.", "Enabling macros can install malware.", "Activar macros puede instalar software malicioso.")
+        case .qrCode: T3("Un QR code cache sa destination : vérifiez-la avant d’ouvrir.", "A QR code hides its destination: check it before opening.", "Un código QR oculta su destino: compruébalo antes de abrir.")
+        }
+    }
+}
+
+/// A signal and the text that triggered it.
+public struct Signal: Hashable, Sendable {
+    public let rule: Rule
+    public let evidence: String
+}
+
+/// A link found in the message.
+public struct Link: Hashable, Sendable {
+    public let url: String
+    public let host: String
+    public let risky: Bool
+}
+
+/// The result of an analysis.
+public struct Report: Hashable, Sendable {
+    public let score: Int
+    public let verdict: Verdict
+    /// 0 (low) to 2 (high).
+    public let confidence: Int
+    public let signals: [Signal]
+    public let links: [Link]
+
+    public var confidenceLabel: T3 {
+        switch confidence {
+        case 0: T3("Faible", "Low", "Baja")
+        case 1: T3("Moyen", "Medium", "Media")
+        default: T3("Élevé", "High", "Alta")
+        }
+    }
+
+    public var technicalSignals: [Signal] { signals.filter { !$0.rule.isManipulation } }
+    public var manipulationSignals: [Signal] { signals.filter { $0.rule.isManipulation } }
+}
+
+// MARK: - Keywords
+
+enum Keywords {
+    static let urgency = [
+        "24 heures", "24h", "immédiatement", "urgent", "sans délai", "dernier rappel", "avant ce soir",
+        "expire", "maintenant", "within 24 hours", "24 hours", "immediately", "final notice",
+        "right now", "act now", "today only", "tonight", "24 horas", "inmediatamente", "urgente",
+        "último aviso", "caduca", "esta noche", "ahora mismo",
+    ]
+    static let threat = [
+        "suspendu", "bloqué", "fermé", "compromis", "renvoyé", "poursuites", "suspended", "locked",
+        "closed", "compromised", "returned to sender", "legal action", "suspendida", "bloqueada",
+        "cerrada", "comprometida", "devuelto",
+    ]
+    static let sensitive = [
+        "mot de passe", "identifiant", "carte bancaire", "numéro de carte", "cryptogramme", "code sms",
+        "code reçu", "iban", "rib", "password", "credit card", "card number", "security code", "cvv",
+        "login details", "sms code", "contraseña", "tarjeta", "número de tarjeta", "código sms",
+        "datos bancarios", "identidad",
+    ]
+    static let money = [
+        "virement", "payer", "frais", "régler", "réglez", "remboursement", "wire transfer", "transfer",
+        "pay", "fee", "refund", "transferencia", "pagar", "tasa", "reembolso", "bitcoin", "crypto",
+        "€", "$",
+    ]
+    static let secrecy = [
+        "à personne", "confidentiel", "ne partagez pas", "discrétion", "don't tell", "do not tell",
+        "confidential", "keep this between", "do not share", "a nadie", "confidencial",
+        "no compartas",
+    ]
+    static let reward = [
+        "gagné", "cadeau", "gratuit", "félicitations", "won", "you have won", "gift", "free",
+        "congratulations", "prize", "ganado", "regalo", "gratis", "enhorabuena", "premio",
+    ]
+    static let authority = [
+        "gouvernement", "police", "impôts", "officiel", "direction", "service sécurité", "government",
+        "official", "tax office", "security team", "ceo", "gobierno", "policía", "hacienda",
+        "oficial", "dirección",
+    ]
+    static let brands = [
+        "paypal", "amazon", "netflix", "apple", "microsoft", "google", "facebook", "instagram",
+        "whatsapp", "dhl", "ups", "fedex", "chronopost", "colissimo", "laposte", "correos", "ameli",
+        "impots", "hacienda", "irs",
+    ]
+    static let shorteners = [
+        "bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "cutt.ly", "ow.ly", "rebrand.ly", "t.ly",
+        "shorturl.at",
+    ]
+    static let freeMail = ["gmail.", "outlook.", "hotmail.", "yahoo.", "proton.", "gmx.", "icloud."]
+    static let oddTlds = [".xyz", ".top", ".click", ".zip", ".mov", ".tk", ".gq", ".cf", ".work", ".rest", ".cam"]
+    static let loginWords = [
+        "login", "verify", "verification", "secure", "account", "update", "confirm", "signin",
+        "connexion", "verificar", "cuenta",
+    ]
+    static let riskyExtensions = [
+        ".exe", ".scr", ".js", ".vbs", ".bat", ".cmd", ".jar", ".iso", ".apk", ".msi", ".hta",
+        ".lnk", ".docm", ".xlsm",
+    ]
+    static let documentExtensions = [".pdf", ".doc", ".docx", ".jpg", ".png", ".xlsx", ".txt"]
+    static let macro = [
+        "activer le contenu", "activer les macros", "enable content", "enable macros",
+        "habilitar contenido", "habilitar macros",
+    ]
+    static let qr = ["qr code", "code qr", "código qr", "qr-code"]
+}
+
+// MARK: - Text helpers
+
+extension Character {
+    var isWordCharacter: Bool { isLetter || isNumber }
+}
+
+/// Whether `text` contains `word`, not as a part of a longer word: `irs` is not found
+/// in `first`.
+public func containsWord(_ text: String, _ word: String) -> Bool {
+    guard let first = word.first, let last = word.last else { return false }
+    var searchRange = text.startIndex..<text.endIndex
+    while let found = text.range(of: word, range: searchRange) {
+        let before = found.lowerBound > text.startIndex ? text[text.index(before: found.lowerBound)] : nil
+        let after = found.upperBound < text.endIndex ? text[found.upperBound] : nil
+        let okBefore = !(first.isWordCharacter && (before?.isWordCharacter ?? false))
+        let okAfter = !(last.isWordCharacter && (after?.isWordCharacter ?? false))
+        if okBefore && okAfter { return true }
+        searchRange = text.index(after: found.lowerBound)..<text.endIndex
+    }
+    return false
+}
+
+func find(_ text: String, _ list: [String]) -> String? {
+    list.first { containsWord(text, $0) }
+}
+
+/// Every URL of the text: `http://…`, `https://…` and `www.…`.
+public func extractURLs(_ text: String) -> [String] {
+    var found: [String] = []
+    let separators: Set<Character> = ["<", ">", "\"", "(", ")"]
+    let words = text.split { $0.isWhitespace || separators.contains($0) }
+    for word in words {
+        let w = String(word)
+        let starts = ["https://", "http://", "www."].compactMap { w.range(of: $0)?.lowerBound }
+        guard let start = starts.min() else { continue }
+        var url = String(w[start...])
+        while let lastChar = url.last, ".,;:!?'".contains(lastChar) {
+            url.removeLast()
+        }
+        if url.count > 6 && !found.contains(url) {
+            found.append(url)
+        }
+    }
+    return found
+}
+
+/// The host of a URL, as written (case kept, to spot `paypaI`).
+public func host(of url: String) -> String {
+    var rest = Substring(url)
+    for scheme in ["https://", "http://"] where rest.hasPrefix(scheme) {
+        rest = rest.dropFirst(scheme.count)
+    }
+    let end = rest.firstIndex { "/?#:".contains($0) } ?? rest.endIndex
+    let hostPart = rest[..<end]
+    if let at = hostPart.lastIndex(of: "@") {
+        return String(hostPart[hostPart.index(after: at)...])
+    }
+    return String(hostPart)
+}
+
+/// The domain of an address `Name <user@domain>` or `user@domain`.
+public func emailDomain(_ line: String) -> String? {
+    guard let at = line.lastIndex(of: "@") else { return nil }
+    let rest = line[line.index(after: at)...]
+    let end = rest.firstIndex { $0 == ">" || $0.isWhitespace } ?? rest.endIndex
+    let domain = String(rest[..<end])
+    return domain.contains(".") ? domain : nil
+}
+
+/// A domain that imitates a brand: characters that look alike (`I` for `l`, `0` for
+/// `o`, `rn` for `m`), or letters from other alphabets.
+public func imitatesBrand(_ domain: String) -> String? {
+    if domain.unicodeScalars.contains(where: { !$0.isASCII }) {
+        return "unicode"
+    }
+    let hasLower = domain.contains { $0.isLowercase }
+    let lowered = domain.lowercased()
+    let normalized = String(domain.map { c -> Character in
+        switch c {
+        case "I" where hasLower: "l"
+        case "0": "o"
+        case "1": "l"
+        case "3": "e"
+        case "5": "s"
+        default: Character(c.lowercased())
+        }
+    }).replacingOccurrences(of: "rn", with: "m")
+    return Keywords.brands.first { normalized.contains($0) && !lowered.contains($0) }
+}
+
+func isIP(_ host: String) -> Bool {
+    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    return parts.count == 4 && parts.allSatisfy { UInt8($0) != nil }
+}
+
+/// The registrable domain (the last two labels): `a.b.example.com` → `example.com`.
+public func registrableDomain(_ host: String) -> String {
+    let labels = host.lowercased().split(separator: ".")
+    return labels.suffix(2).joined(separator: ".")
+}
+
+// MARK: - Engine
+
+public enum Engine {
+    /// Analyzes a message: the pasted text of an email, an SMS, a link…
+    public static func analyze(_ text: String) -> Report {
+        analyze(text: text, extra: [])
+    }
+
+    /// Analyzes a parsed email: its text, plus its authentication results and reply
+    /// address.
+    public static func analyze(_ message: EmailMessage) -> Report {
+        var extra: [Signal] = []
+        if let failed = message.failedAuthentication {
+            extra.append(Signal(rule: .authFailure, evidence: failed))
+        }
+        if let from = message.fromAddress.flatMap(emailDomain),
+           let reply = message.replyTo.flatMap(emailDomain),
+           registrableDomain(from) != registrableDomain(reply)
+        {
+            extra.append(Signal(rule: .replyToMismatch, evidence: "\(from) → \(reply)"))
+        }
+        return analyze(text: message.analysisText, extra: extra)
+    }
+
+    static func analyze(text: String, extra: [Signal]) -> Report {
+        let lower = text.lowercased()
+        var signals: [Signal] = []
+        func push(_ rule: Rule, _ evidence: String) {
+            if !signals.contains(where: { $0.rule == rule }) {
+                signals.append(Signal(rule: rule, evidence: evidence))
+            }
+        }
+        for signal in extra { push(signal.rule, signal.evidence) }
+
+        // Sender.
+        let senderLine = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { line in
+            let l = line.lowercased()
+            return ["de :", "de:", "from:", "from :", "remitente:"].contains { l.hasPrefix($0) }
+        }
+        if let line = senderLine, let domain = emailDomain(line) {
+            if imitatesBrand(domain) != nil {
+                push(.lookalike, domain)
+            }
+            let d = domain.lowercased()
+            if Keywords.freeMail.contains(where: { d.hasPrefix($0) }) {
+                let name = line.lowercased()
+                if find(name, Keywords.authority) != nil || Keywords.brands.contains(where: { containsWord(name, $0) }) {
+                    push(.freeMailer, domain)
+                }
+            }
+        }
+
+        // Links.
+        var links: [Link] = []
+        for url in extractURLs(text) {
+            let h = host(of: url)
+            let lh = h.lowercased()
+            var risky = false
+            if imitatesBrand(h) != nil { push(.lookalike, h); risky = true }
+            if Keywords.shorteners.contains(where: { lh == $0 || lh.hasSuffix("." + $0) }) { push(.shortLink, h); risky = true }
+            if isIP(lh) { push(.ipLink, h); risky = true }
+            if url.lowercased().hasPrefix("http://") { push(.plainHttp, url); risky = true }
+            if Keywords.oddTlds.contains(where: { lh.hasSuffix($0) }) { push(.oddTld, h); risky = true }
+            if lh.split(separator: ".").count >= 4 { push(.deepSubdomains, h); risky = true }
+            if let word = find(lh, Keywords.loginWords) { push(.loginWords, word); risky = true }
+            if let brand = Keywords.brands.first(where: { containsWord(lower, $0) }),
+               !registrableDomain(lh).contains(brand), !isIP(lh)
+            {
+                push(.brandMismatch, "\(brand) → \(h)")
+                risky = true
+            }
+            links.append(Link(url: url, host: h, risky: risky))
+        }
+
+        // Attachments.
+        let wordSeparators: Set<Character> = [",", ";", ":", "(", ")"]
+        for raw in lower.split(whereSeparator: { $0.isWhitespace || wordSeparators.contains($0) }) {
+            var word = String(raw)
+            while let lastChar = word.last, ".!?".contains(lastChar) { word.removeLast() }
+            guard word.contains("."), !word.contains("/"), !word.contains("@") else { continue }
+            if let ext = Keywords.riskyExtensions.first(where: { word.hasSuffix($0) }) {
+                let stem = String(word.dropLast(ext.count))
+                if Keywords.documentExtensions.contains(where: { stem.hasSuffix($0) }) {
+                    push(.doubleExtension, word)
+                } else {
+                    push(.riskyFile, word)
+                }
+            }
+        }
+        if let m = find(lower, Keywords.macro) { push(.macro, m) }
+        if let q = find(lower, Keywords.qr) { push(.qrCode, q) }
+
+        // Manipulation.
+        let techniques: [(Rule, [String])] = [
+            (.urgency, Keywords.urgency), (.threat, Keywords.threat), (.sensitiveData, Keywords.sensitive),
+            (.secrecy, Keywords.secrecy), (.reward, Keywords.reward), (.authority, Keywords.authority),
+        ]
+        for (rule, list) in techniques {
+            if let word = find(lower, list) { push(rule, word) }
+        }
+        // Money alone is ordinary: it counts with another sign of pressure.
+        if let word = find(lower, Keywords.money), signals.contains(where: { $0.rule.isManipulation }) {
+            push(.money, word)
+        }
+
+        let raw = signals.reduce(0) { $0 + $1.rule.weight }
+        // Authority alone (a newsletter from a city hall) is no danger.
+        let score = (signals.count == 1 && signals[0].rule == .authority) ? 4 : min(raw, 98)
+        let words = lower.split(whereSeparator: \.isWhitespace).count
+        let confidence: Int
+        switch (words, signals.count) {
+        case (0...8, _): confidence = 0
+        case (_, 0...1): confidence = 1
+        case (_, 2...3) where score < 70: confidence = 1
+        default: confidence = 2
+        }
+        return Report(score: score, verdict: .of(score: score), confidence: confidence, signals: signals, links: links)
+    }
+}

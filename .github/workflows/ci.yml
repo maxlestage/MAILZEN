@@ -2,6 +2,8 @@
 #
 # - check: format, clippy (server and browser), tests, the WebAssembly bundle and
 #   the static export of the site;
+# - ios: the tests of MailZenKit (the Swift core) and the build of the iOS app and of
+#   its share extension, on a Mac;
 # - merge: when everything is green, the branch is merged into master (except master
 #   itself and branches named wip/...), then GitHub Pages and Heroku are deployed: a
 #   push made by a workflow starts no other workflow, so they are started explicitly.
@@ -38,9 +40,31 @@ jobs:
       - name: Static export
         run: BASE_PATH="/${{ github.event.repository.name }}" cargo run --release -- export dist
 
+  ios:
+    name: iOS app (MailZenKit tests, Xcode build)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Xcode
+        run: xcodebuild -version && swift --version
+      - name: MailZenKit tests
+        run: swift test --package-path apps/ios/MailZenKit
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd apps/ios && xcodegen generate
+      - name: Build the app and its share extension
+        run: |
+          cd apps/ios
+          set -o pipefail
+          xcodebuild build -project MailZen.xcodeproj -scheme MailZen \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee build.log | grep -E "error:|warning: |BUILD" || true
+          grep -q "BUILD SUCCEEDED" build.log
+
   merge:
     name: Merge into master
-    needs: [check]
+    needs: [check, ios]
     if: >-
       github.event_name == 'push' && github.ref_name != 'master' &&
       !startsWith(github.ref_name, 'wip/')
@@ -78,3 +102,4 @@ jobs:
         run: |
           gh workflow run pages.yml --ref master --repo "$GITHUB_REPOSITORY"
           gh workflow run heroku.yml --ref master --repo "$GITHUB_REPOSITORY"
+          gh workflow run ios-release.yml --ref master --repo "$GITHUB_REPOSITORY"

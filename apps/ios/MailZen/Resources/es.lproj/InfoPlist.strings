@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "MailZen";
+"NSCameraUsageDescription" = "La cámara sirve para escanear códigos QR: el destino se muestra antes de abrir nada.";
+"NSPhotoLibraryUsageDescription" = "MailZen lee las capturas que eliges para encontrar texto y códigos QR, en el dispositivo.";
