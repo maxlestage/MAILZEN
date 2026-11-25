@@ -1,0 +1,69 @@
+# Builds, signs and sends the iOS app to TestFlight, without a Mac: everything runs on
+# a GitHub macOS runner with an App Store Connect API key. Then install TestFlight on
+# the iPhone to try each version.
+#
+# Setup (once, from a phone):
+#   1. An Apple Developer account (developer.apple.com, paid membership).
+#   2. App Store Connect → Apps → + → New app, bundle ID com.maxlestage.mailzen
+#      (create the identifier first in Certificates, Identifiers & Profiles if asked).
+#   3. App Store Connect → Users and Access → Integrations → App Store Connect API →
+#      generate a key with the "App Manager" role; download the .p8 file.
+#   4. GitHub → Settings → Secrets and variables → Actions:
+#      - secret ASC_KEY_ID          the key ID
+#      - secret ASC_ISSUER_ID       the issuer ID shown above the keys
+#      - secret ASC_KEY_P8          the content of the .p8 file
+#      - secret APPLE_TEAM_ID       the team ID (developer.apple.com → Membership)
+# Without them, the workflow stops with a notice.
+
+name: iOS to TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "apps/ios/**"
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    name: Archive and upload
+    runs-on: macos-latest
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      TEAM: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Configuration
+        id: config
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ] || [ -z "$TEAM" ]; then
+            echo "::notice::TestFlight is not configured: add ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID (see ios-release.yml)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.config.outputs.ready == 'true'
+      - name: Archive, sign and upload to TestFlight
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          cd apps/ios
+          xcodegen generate
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s' "$ASC_KEY_P8" > "$key"
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild archive -project MailZen.xcodeproj -scheme MailZen \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/MailZen.xcarchive" \
+            -skipPackagePluginValidation "${auth[@]}" \
+            DEVELOPMENT_TEAM="$TEAM" CURRENT_PROJECT_VERSION="${{ github.run_number }}"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $TEAM" ExportOptions.plist
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/MailZen.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist -exportPath "$RUNNER_TEMP/export" "${auth[@]}"
+          echo "### 📲 MailZen ${{ github.run_number }} sent to TestFlight" >> "$GITHUB_STEP_SUMMARY"

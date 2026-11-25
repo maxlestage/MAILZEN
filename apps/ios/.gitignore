@@ -1,0 +1,6 @@
+*.xcodeproj
+MailZen/Info.plist
+MailZenShare/Info.plist
+.build/
+build/
+DerivedData/
