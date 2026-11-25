@@ -13,8 +13,9 @@ fn lang(props: &str) -> Lang {
 }
 
 /// Every island, registered under the name used by [`island`].
-pub const ISLANDS: [(&str, paquets::active::IslandFn); 5] = [
+pub const ISLANDS: [(&str, paquets::active::IslandFn); 6] = [
     ("scan", scan),
+    ("connect", connect),
     ("sos", sos),
     ("quiz", quiz),
     ("pricing", pricing),
@@ -337,6 +338,223 @@ fn report_view(lang: Lang, r: &Report) -> Element {
     )
 }
 
+// ----- Mailbox connection ----------------------------------------------------------------
+
+/// The mailboxes MailZen will connect to: (name, how, CSS modifier).
+pub const PROVIDERS: [(&str, T3, &str); 5] = [
+    (
+        "Gmail",
+        [
+            "Connexion Google (OAuth)",
+            "Google sign-in (OAuth)",
+            "Inicio de sesión de Google (OAuth)",
+        ],
+        "gmail",
+    ),
+    (
+        "Outlook",
+        [
+            "Connexion Microsoft (OAuth)",
+            "Microsoft sign-in (OAuth)",
+            "Inicio de sesión de Microsoft (OAuth)",
+        ],
+        "outlook",
+    ),
+    (
+        "iCloud Mail",
+        [
+            "Mot de passe d’app Apple",
+            "Apple app-specific password",
+            "Contraseña de app de Apple",
+        ],
+        "icloud",
+    ),
+    (
+        "Yahoo Mail",
+        [
+            "Connexion Yahoo (OAuth)",
+            "Yahoo sign-in (OAuth)",
+            "Inicio de sesión de Yahoo (OAuth)",
+        ],
+        "yahoo",
+    ),
+    (
+        "IMAP",
+        [
+            "Toute autre boîte mail",
+            "Any other mailbox",
+            "Cualquier otro buzón",
+        ],
+        "imap",
+    ),
+];
+
+const CONNECT_STEPS: [T3; 4] = [
+    [
+        "Choix du compte",
+        "Choosing the account",
+        "Elección de la cuenta",
+    ],
+    [
+        "Autorisation en lecture seule",
+        "Read-only authorization",
+        "Autorización de solo lectura",
+    ],
+    [
+        "Aucun mot de passe enregistré par MailZen",
+        "No password stored by MailZen",
+        "MailZen no guarda ninguna contraseña",
+    ],
+    [
+        "Analyse des nouveaux emails sur l’appareil",
+        "New emails analyzed on the device",
+        "Análisis de los correos nuevos en el dispositivo",
+    ],
+];
+
+/// "Connect your mailbox": pick a provider, watch the connection flow. The real
+/// connection comes with the app; the site reads nothing.
+pub fn connect(props: &str) -> Node {
+    let lang = lang(props);
+    let t = move |text: &T3| lang.t(text);
+    let chosen = use_state(None::<usize>);
+    let step = use_state(0u8);
+    let run = use_state(0u32);
+    let pick = move |i: usize| {
+        let id = run.get() + 1;
+        run.set(id);
+        chosen.set(Some(i));
+        step.set(1);
+        for s in 2..=5u8 {
+            after(i32::from(s - 1) * 700, move || {
+                if run.get() == id {
+                    step.set(s);
+                }
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        step.set(5);
+    };
+    div()
+        .class("connect")
+        .children_dyn(move || {
+            let Some(index) = chosen.get() else {
+                return vec![
+                    div()
+                        .class("providers")
+                        .children(PROVIDERS.iter().enumerate().map(|(i, (name, how, class))| {
+                            Node::from(
+                                button()
+                                    .class("provider")
+                                    .class(format!("provider--{class}"))
+                                    .attr("type", "button")
+                                    .style(format!("--i:{i}"))
+                                    .on_click(move |_| pick(i))
+                                    .child(span().class("provider__logo").child(icon("mail")))
+                                    .child(
+                                        span()
+                                            .class("provider__text")
+                                            .child(strong().text(*name))
+                                            .child(small().text(t(how))),
+                                    )
+                                    .child(icon("arrow")),
+                            )
+                        }))
+                        .into(),
+                    ul().class("connect__promises")
+                        .children(
+                            [
+                                ("eye", ["Lecture seule", "Read-only", "Solo lectura"]),
+                                ("key", ["Jamais votre mot de passe", "Never your password", "Nunca tu contraseña"]),
+                                ("phone", ["Analyse sur l’appareil", "Analysis on the device", "Análisis en el dispositivo"]),
+                                ("x", ["Déconnexion en un geste", "Disconnect in one tap", "Desconexión con un toque"]),
+                            ]
+                            .into_iter()
+                            .map(|(ic, label)| {
+                                Node::from(li().child(icon(ic)).child(span().text(lang.t(&label))))
+                            }),
+                        )
+                        .into(),
+                ];
+            };
+            let (name, _, class) = PROVIDERS[index];
+            let now = step.get();
+            let mut card = div()
+                .class("connect__card")
+                .class(format!("provider--{class}"))
+                .child(
+                    div()
+                        .class("connect__head")
+                        .child(span().class("provider__logo").child(icon("mail")))
+                        .child(span().class("connect__link").attr("aria-hidden", "true").child(i()).child(i()).child(i()))
+                        .child(span().class("connect__shield").child(icon("shield")))
+                        .child(strong().text(format!("{name} → MailZen"))),
+                )
+                .child(ol().class("scan__steps connect__steps").children(
+                    CONNECT_STEPS.iter().enumerate().map(|(k, label)| {
+                        let n = k as u8 + 1;
+                        let state = if n < now {
+                            "is-done"
+                        } else if n == now {
+                            "is-now"
+                        } else {
+                            "is-next"
+                        };
+                        Node::from(
+                            li().class(state)
+                                .child(span().class("scan__tick").child(icon(if n < now { "check" } else { "radar" })))
+                                .child(span().text(t(label))),
+                        )
+                    }),
+                ));
+            if now >= 5 {
+                card = card.child(
+                    div()
+                        .class("connect__done")
+                        .child(p().child(strong().text(t(&[
+                            "Le parcours est prêt.",
+                            "The flow is ready.",
+                            "El recorrido está listo.",
+                        ]))).text(t(&[
+                            " La connexion directe à votre boîte arrive avec l’app MailZen pour iOS et Android. Ce site ne lit aucun email : en attendant, analysez un message dans la démo.",
+                            " Direct connection to your mailbox comes with the MailZen app for iOS and Android. This site reads no email: meanwhile, analyze a message in the demo.",
+                            " La conexión directa a tu buzón llega con la app MailZen para iOS y Android. Este sitio no lee ningún correo: mientras tanto, analiza un mensaje en la demo.",
+                        ])))
+                        .child(
+                            div()
+                                .class("connect__actions")
+                                .child(
+                                    a().class("btn btn--primary")
+                                        .href("#demo")
+                                        .child(icon("radar"))
+                                        .child(span().text(t(&["Analyser un email", "Analyze an email", "Analizar un correo"]))),
+                                )
+                                .child(
+                                    a().class("btn btn--ghost")
+                                        .href("message://")
+                                        .child(icon("mail"))
+                                        .child(span().text(t(&["Ouvrir l’app Mail", "Open the Mail app", "Abrir la app Mail"]))),
+                                )
+                                .child(
+                                    button()
+                                        .class("btn btn--ghost")
+                                        .attr("type", "button")
+                                        .on_click(move |_| {
+                                            run.update(|r| *r += 1);
+                                            chosen.set(None);
+                                            step.set(0);
+                                        })
+                                        .child(icon("reply"))
+                                        .child(span().text(t(&["Autre compte", "Another account", "Otra cuenta"]))),
+                                ),
+                        ),
+                );
+            }
+            vec![card.into()]
+        })
+        .into()
+}
+
 // ----- SOS Cyber ---------------------------------------------------------------------------
 
 /// "What happened?": a scenario, then its steps.
@@ -639,6 +857,14 @@ mod tests {
                 let html = island(name, lang.code(), island_fn).render();
                 assert!(html.contains(&format!("data-island=\"{name}\"")));
             }
+        }
+    }
+
+    #[test]
+    fn the_connection_lists_every_provider() {
+        let html = island("connect", "fr", connect).render();
+        for (name, _, _) in PROVIDERS {
+            assert!(html.contains(name), "{name}");
         }
     }
 
