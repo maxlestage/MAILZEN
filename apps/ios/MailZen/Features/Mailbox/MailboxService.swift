@@ -60,8 +60,8 @@ enum Keychain {
 @Observable
 final class MailboxService {
     static let shared = MailboxService()
-    static let refreshTaskID = "com.maxlestage.mailzen.refresh"
-    private static let accountKey = "mailAccount"
+    nonisolated static let refreshTaskID = "com.maxlestage.mailzen.refresh"
+    nonisolated private static let accountKey = "mailAccount"
 
     private(set) var account: MailAccount?
     private(set) var checking = false
@@ -185,9 +185,10 @@ final class MailboxService {
         if let data = try? JSONEncoder().encode(account) {
             UserDefaults.standard.set(data, forKey: accountKey)
         }
+        let saved = account
         await MainActor.run {
             record(check, notify: true)
-            shared.account = account
+            shared.account = saved
         }
     }
 

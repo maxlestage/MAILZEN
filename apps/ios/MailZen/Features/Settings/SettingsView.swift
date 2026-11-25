@@ -39,7 +39,7 @@ struct SettingsView: View {
                 }
             }
             Section("PrivacyZen") {
-                ForEach(Array(Content.privacy.prefix(8).enumerated()), id: \.offset) { _, item in
+                ForEach(Array(Library.privacy.prefix(8).enumerated()), id: \.offset) { _, item in
                     Label(item.localized, systemImage: "checkmark.shield").foregroundStyle(Theme.text)
                 }
             }

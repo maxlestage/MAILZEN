@@ -142,7 +142,7 @@ struct HomeView: View {
     }
 
     private var tip: some View {
-        let topics = Content.techniques
+        let topics = Library.techniques
         let day = Calendar.current.ordinality(of: .day, in: .year, for: .now) ?? 0
         let technique = topics[day % topics.count]
         return VStack(alignment: .leading, spacing: 10) {

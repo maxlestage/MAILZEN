@@ -24,7 +24,7 @@ struct SOSView: View {
                     Text(tr("Ce n’est pas votre faute : ces messages sont conçus pour tromper.", "It is not your fault: these messages are designed to deceive.", "No es culpa tuya: estos mensajes están hechos para engañar."))
                         .font(.subheadline).foregroundStyle(Theme.muted)
                 }
-                ForEach(Array(Content.scenarios.enumerated()), id: \.offset) { index, scenario in
+                ForEach(Array(Library.scenarios.enumerated()), id: \.offset) { index, scenario in
                     NavigationLink {
                         ScenarioView(scenario: scenario)
                     } label: {

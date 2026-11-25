@@ -5,7 +5,7 @@ import Testing
 @Suite struct EngineTests {
     @Test func theSamplesGetTheExpectedVerdicts() {
         for lang in AppLanguage.allCases {
-            let verdicts = Content.samples.map { Engine.analyze($0.text.text(lang)).verdict }
+            let verdicts = Library.samples.map { Engine.analyze($0.text.text(lang)).verdict }
             #expect(verdicts == [.danger, .suspicious, .danger, .safe], "\(lang)")
         }
     }

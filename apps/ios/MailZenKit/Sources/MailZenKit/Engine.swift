@@ -202,7 +202,7 @@ public struct Signal: Hashable, Sendable {
 }
 
 /// A link found in the message.
-public struct Link: Hashable, Sendable {
+public struct DetectedLink: Hashable, Sendable {
     public let url: String
     public let host: String
     public let risky: Bool
@@ -215,7 +215,7 @@ public struct Report: Hashable, Sendable {
     /// 0 (low) to 2 (high).
     public let confidence: Int
     public let signals: [Signal]
-    public let links: [Link]
+    public let links: [DetectedLink]
 
     public var confidenceLabel: T3 {
         switch confidence {
@@ -449,7 +449,7 @@ public enum Engine {
         }
 
         // Links.
-        var links: [Link] = []
+        var links: [DetectedLink] = []
         for url in extractURLs(text) {
             let h = host(of: url)
             let lh = h.lowercased()
@@ -467,7 +467,7 @@ public enum Engine {
                 push(.brandMismatch, "\(brand) → \(h)")
                 risky = true
             }
-            links.append(Link(url: url, host: h, risky: risky))
+            links.append(DetectedLink(url: url, host: h, risky: risky))
         }
 
         // Attachments.

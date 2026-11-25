@@ -28,7 +28,7 @@ public struct Module: Sendable {
     public let text: T3
 }
 
-public enum Content {
+public enum Library {
     public static let samples: [Sample] = [
         Sample(
             label: T3("Faux PayPal", "Fake PayPal", "PayPal falso"),

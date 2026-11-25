@@ -120,7 +120,7 @@ struct ScannerView: View {
         VStack(alignment: .leading, spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Array(Content.samples.enumerated()), id: \.offset) { _, sample in
+                    ForEach(Array(Library.samples.enumerated()), id: \.offset) { _, sample in
                         Button { text = sample.text.localized } label: { Chip(text: sample.label.localized) }
                             .buttonStyle(.plain)
                     }
