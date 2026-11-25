@@ -117,7 +117,4 @@ pub fn later(ms: i32, f: impl FnOnce() + 'static) {
 /// Back to the top of the page (smoothly, through the CSS `scroll-behavior`).
 pub fn scroll_to_top() {
     window().scroll_to_with_x_and_y(0.0, 0.0);
-    if let Some(skip) = all("#top").into_iter().next() {
-        let _ = skip.focus();
-    }
 }

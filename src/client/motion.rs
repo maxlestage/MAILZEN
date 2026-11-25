@@ -100,7 +100,7 @@ fn intro(root: &HtmlElement) {
         let mut start = None;
         request_frame(move |now| {
             let t0 = *start.get_or_insert(now);
-            let p = ((now - t0) / 1900.0).min(1.0);
+            let p = ((now - t0) / 1000.0).min(1.0);
             let eased = 1.0 - (1.0 - p).powi(3);
             percent.set_text_content(Some(&format!("{:.0}%", eased * 100.0)));
             p < 1.0
@@ -127,6 +127,10 @@ fn reveals() {
             io.unobserve(&target);
         }
     });
+    on(&window(), "pageshow", |_: web_sys::Event| reveal_visible());
+    on(&window(), "hashchange", |_: web_sys::Event| {
+        later(450, reveal_visible)
+    });
     // Safety net for browsers that miss an intersection (Safari on iOS during momentum
     // scrolling): every scroll reveals what is already on screen.
     let ticking = Rc::new(Cell::new(false));
@@ -149,6 +153,17 @@ fn reveals() {
     });
 }
 
+/// Reveals at once every `[data-reveal]` element on screen.
+fn reveal_visible() {
+    let height = viewport_height();
+    for el in all("[data-reveal]:not(.in)") {
+        let rect = el.get_bounding_client_rect();
+        if rect.top() < height && rect.bottom() > 0.0 {
+            let _ = el.class_list().add_1("in");
+        }
+    }
+}
+
 /// The progress bar, the navigation, parallax, and the progress of the timelines
 /// (`[data-progress]`, `--p` from 0 to 1) and of the hero (`--scroll`).
 fn scroll_state() {
@@ -157,7 +172,7 @@ fn scroll_state() {
     let nav = all("#nav");
     let timelines = all("[data-progress]");
     let hero = all(".hero");
-    let still = reduced_motion();
+    let still = reduced_motion() || !matches("(hover: hover) and (pointer: fine)");
     let parallax: Vec<(HtmlElement, f64)> = if still {
         Vec::new()
     } else {
@@ -172,7 +187,6 @@ fn scroll_state() {
             })
             .collect()
     };
-    let last = Rc::new(Cell::new(0.0f64));
     let update = move || {
         let y = window().scroll_y().unwrap_or(0.0);
         let height = viewport_height();
@@ -182,17 +196,12 @@ fn scroll_state() {
         for bar in &progress {
             set(bar, "transform", &format!("scaleX({page:.4})"));
         }
-        let menu_open = root.class_list().contains("menu-open");
+        // The navigation stays on screen: its menu must always be one tap away.
         for nav in &nav {
-            let list = nav.class_list();
-            let _ = list.toggle_with_force("nav--scrolled", y > 24.0);
-            if y > last.get() + 2.0 && y > 480.0 && !menu_open {
-                let _ = list.add_1("nav--hidden");
-            } else if y < last.get() - 2.0 {
-                let _ = list.remove_1("nav--hidden");
-            }
+            let _ = nav
+                .class_list()
+                .toggle_with_force("nav--scrolled", y > 24.0);
         }
-        last.set(y);
         for (el, speed) in &parallax {
             let rect = el.get_bounding_client_rect();
             let center = rect.top() + rect.height() / 2.0 - height / 2.0;
