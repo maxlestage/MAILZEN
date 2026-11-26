@@ -1,0 +1,29 @@
+{
+ "version": "2026-11-26",
+ "scam": {
+  "accuracy": 0.9830508474576272,
+  "auc": 0.9983711511746782,
+  "falsePositives09": 0.0016638935108153079,
+  "recall09": 0.9121566494424803,
+  "messages": 82782,
+  "weights": 162685
+ },
+ "category": {
+  "accuracy": 0.8118801908569525,
+  "families": 10,
+  "weights": 13193
+ },
+ "intent": {
+  "accuracy": 0.6629256079881592,
+  "intents": 13,
+  "weights": 7177
+ },
+ "url": {
+  "auc": 0.9870001650390456,
+  "falsePositives095": 0.0031638257407440324,
+  "recall095": 0.6136431906933559,
+  "links": 871399,
+  "weights": 238101
+ },
+ "feedback": 0
+}

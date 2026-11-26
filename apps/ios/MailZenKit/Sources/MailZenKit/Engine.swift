@@ -95,7 +95,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
     case riskyFile, doubleExtension, macro, qrCode
     case typeMismatch, executable, scriptInDocument, autoAction, embeddedFile, officeMacros
     case externalContent, passwordForm, metaRefresh, archiveRisk, encryptedArchive, zipBomb, formulaInjection
-    case modelScam
+    case modelScam, modelLink, blockedSender
 
     public var family: Family {
         switch self {
@@ -107,7 +107,8 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .riskyFile, .doubleExtension, .macro: .file
         case .typeMismatch, .executable, .scriptInDocument, .autoAction, .embeddedFile, .officeMacros,
              .externalContent, .passwordForm, .metaRefresh, .archiveRisk, .encryptedArchive, .zipBomb, .formulaInjection: .file
-        case .modelScam: .model
+        case .modelScam, .modelLink: .model
+        case .blockedSender: .sender
         }
     }
 
@@ -149,6 +150,8 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .zipBomb: 40
         case .formulaInjection: 26
         case .modelScam: 16
+        case .modelLink: 14
+        case .blockedSender: 45
         }
     }
 
@@ -198,6 +201,8 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .zipBomb: T3("Bombe de décompression", "Decompression bomb", "Bomba de descompresión")
         case .formulaInjection: T3("Formule dangereuse (CSV)", "Dangerous formula (CSV)", "Fórmula peligrosa (CSV)")
         case .modelScam: T3("Ressemble à des arnaques connues", "Looks like known scams", "Se parece a estafas conocidas")
+        case .modelLink: T3("Lien proche de liens de phishing connus", "Link close to known phishing links", "Enlace parecido a enlaces de phishing conocidos")
+        case .blockedSender: T3("Expéditeur que vous avez bloqué", "Sender you blocked", "Remitente que has bloqueado")
         }
     }
 
@@ -240,6 +245,8 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .zipBomb: T3("Décompresser ce fichier saturerait l’appareil.", "Decompressing this file would overwhelm the device.", "Descomprimir este archivo saturaría el dispositivo.")
         case .formulaInjection: T3("Ouvert dans un tableur, il exécuterait une formule ou une commande.", "Opened in a spreadsheet, it would run a formula or a command.", "Abierto en una hoja de cálculo, ejecutaría una fórmula o un comando.")
         case .modelScam: T3("Le modèle entraîné de MailZen reconnaît dans ce texte les tournures de très nombreuses arnaques.", "MailZen’s trained model recognizes in this text the wording of many scams.", "El modelo entrenado de MailZen reconoce en este texto la redacción de muchas estafas.")
+        case .modelLink: T3("Le modèle des liens, entraîné sur des centaines de milliers d’adresses, reconnaît la forme d’un lien de phishing.", "The link model, trained on hundreds of thousands of addresses, recognizes the shape of a phishing link.", "El modelo de enlaces, entrenado con cientos de miles de direcciones, reconoce la forma de un enlace de phishing.")
+        case .blockedSender: T3("Vous avez déjà signalé cet expéditeur comme malveillant.", "You already reported this sender as malicious.", "Ya marcaste a este remitente como malicioso.")
         }
     }
 }
@@ -255,6 +262,33 @@ public struct DetectedLink: Hashable, Sendable {
     public let url: String
     public let host: String
     public let risky: Bool
+    /// The probability given by the link model, when it ran (never for an official domain).
+    public var modelProbability: Double? = nil
+}
+
+/// The senders the user trusts or blocked, by domain (or full address), kept on the device.
+public struct PersonalLists: Sendable, Hashable, Codable {
+    public var trusted: Set<String> = []
+    public var blocked: Set<String> = []
+    public init(trusted: Set<String> = [], blocked: Set<String> = []) {
+        self.trusted = trusted
+        self.blocked = blocked
+    }
+
+    /// The key of an address: its domain, lowercased; a free mailbox keeps its full address.
+    public static func key(of address: String) -> String? {
+        guard let domain = emailDomain(address)?.lowercased() else { return nil }
+        if Keywords.freeMail.contains(where: { domain.hasPrefix($0) }) || ["orange.fr", "free.fr", "laposte.net", "sfr.fr"].contains(domain) {
+            let inner = address.split(separator: "<").last.map(String.init) ?? address
+            return inner.trimmingCharacters(in: CharacterSet(charactersIn: "<> ")).lowercased()
+        }
+        return registrableDomain(domain)
+    }
+
+    func contains(_ set: Set<String>, _ address: String?) -> Bool {
+        guard let address, let key = Self.key(of: address) else { return false }
+        return set.contains(key)
+    }
 }
 
 /// The result of an analysis.
@@ -267,6 +301,8 @@ public struct Report: Hashable, Sendable {
     public let links: [DetectedLink]
     /// What the trained models say, when they ran.
     public var model: ModelInsight? = nil
+    /// The sender is on the user's trusted list.
+    public var trustedSender = false
 
     public var confidenceLabel: T3 {
         switch confidence {
@@ -274,6 +310,18 @@ public struct Report: Hashable, Sendable {
         case 1: T3("Moyen", "Medium", "Media")
         default: T3("Élevé", "High", "Alta")
         }
+    }
+
+    /// The report of a message from a trusted sender: the text signals stay visible, but
+    /// the score is lowered, unless an attachment, an authentication failure or a lookalike
+    /// shows that someone poses as that sender.
+    func trusted() -> Report {
+        let hard: Set<Rule> = [.authFailure, .lookalike, .executable, .typeMismatch, .doubleExtension, .archiveRisk, .zipBomb, .passwordForm, .blockedSender]
+        guard !signals.contains(where: { hard.contains($0.rule) }) else { return self }
+        let lowered = min(score, 19)
+        var r = Report(score: lowered, verdict: .of(score: lowered), confidence: confidence, signals: signals, links: links, model: model)
+        r.trustedSender = true
+        return r
     }
 
     public var technicalSignals: [Signal] { signals.filter { !$0.rule.isManipulation } }
@@ -461,7 +509,8 @@ public enum Engine {
 
     /// Analyzes a parsed email: its text, plus its authentication results and reply
     /// address.
-    public static func analyze(_ message: EmailMessage) -> Report {
+    public static func analyze(_ message: EmailMessage, personal lists: PersonalLists? = nil) -> Report {
+        let personal = lists ?? Self.personal
         var extra: [Signal] = []
         if let failed = message.failedAuthentication {
             extra.append(Signal(rule: .authFailure, evidence: failed))
@@ -478,13 +527,21 @@ public enum Engine {
                 extra.append(signal)
             }
         }
-        return analyze(text: message.analysisText, extra: extra)
+        if personal.contains(personal.blocked, message.fromAddress) {
+            extra.append(Signal(rule: .blockedSender, evidence: message.fromAddress ?? ""))
+        }
+        var report = analyze(text: message.analysisText, extra: extra, personal: personal)
+        if personal.contains(personal.trusted, message.fromAddress) { report = report.trusted() }
+        return report
     }
 
     /// Whether the trained models take part (the rules alone otherwise).
     nonisolated(unsafe) public static var useModels = true
+    /// The senders the user trusts or blocked (set by the app).
+    nonisolated(unsafe) public static var personal = PersonalLists()
 
-    static func analyze(text: String, extra: [Signal], models: Bool = true) -> Report {
+    static func analyze(text: String, extra: [Signal], models: Bool = true, personal lists: PersonalLists? = nil) -> Report {
+        let personal = lists ?? Self.personal
         let lower = text.lowercased()
         var signals: [Signal] = []
         func push(_ rule: Rule, _ evidence: String) {
@@ -498,6 +555,9 @@ public enum Engine {
         let senderLine = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { line in
             let l = line.lowercased()
             return ["de :", "de:", "from:", "from :", "remitente:"].contains { l.hasPrefix($0) }
+        }
+        if let line = senderLine, personal.contains(personal.blocked, line) {
+            push(.blockedSender, emailDomain(line) ?? line)
         }
         if let line = senderLine, let domain = emailDomain(line) {
             if imitatesBrand(domain) != nil {
@@ -533,7 +593,16 @@ public enum Engine {
                 push(.brandMismatch, "\(brand) → \(h)")
                 risky = true
             }
-            links.append(DetectedLink(url: url, host: h, risky: risky))
+            var link = DetectedLink(url: url, host: h, risky: risky)
+            if useModels, models, !official, !isIP(lh), let m = Models.shared {
+                let p = m.linkProbability(url)
+                link.modelProbability = p
+                if p >= 0.95 {
+                    push(.modelLink, "\(h) (\(Int((p * 100).rounded())) %)")
+                    link = DetectedLink(url: url, host: h, risky: true, modelProbability: p)
+                }
+            }
+            links.append(link)
         }
 
         // Attachments.

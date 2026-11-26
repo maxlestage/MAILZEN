@@ -69,6 +69,107 @@ public enum Featurizer {
     }
 }
 
+/// The features of a link (ml/url_features.py, reproduced exactly).
+public enum URLFeaturizer {
+    static let maxScalars = 300
+
+    static func scalars(_ s: String) -> [Unicode.Scalar] { Array(s.unicodeScalars) }
+
+    /// Trimmed, `&amp;` decoded, lowercased, cut, without scheme, leading `www.` and
+    /// trailing slashes.
+    static func normalize(_ url: String) -> String {
+        let lowered = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "&amp;", with: "&").lowercased()
+        var view = String.UnicodeScalarView()
+        view.append(contentsOf: lowered.unicodeScalars.prefix(maxScalars))
+        var u = String(view)
+        for scheme in ["https://", "http://"] where u.hasPrefix(scheme) {
+            u = String(u.unicodeScalars.dropFirst(scheme.unicodeScalars.count))
+            break
+        }
+        if u.hasPrefix("www.") { u = String(u.unicodeScalars.dropFirst(4)) }
+        while u.unicodeScalars.last == "/" { u = String(u.unicodeScalars.dropLast()) }
+        return u
+    }
+
+    static func split(_ u: String) -> (host: String, rest: String, at: Bool, port: Bool) {
+        let s = scalars(u)
+        let end = s.firstIndex { $0 == "/" || $0 == "?" || $0 == "#" } ?? s.count
+        var host = Array(s[0..<end])
+        let rest = String(String.UnicodeScalarView(s[end...]))
+        let at = host.contains("@")
+        if at, let i = host.lastIndex(of: "@") { host = Array(host[(i + 1)...]) }
+        let port = host.contains(":")
+        if port, let i = host.firstIndex(of: ":") { host = Array(host[..<i]) }
+        return (String(String.UnicodeScalarView(host)), rest, at, port)
+    }
+
+    static func string(_ s: ArraySlice<Unicode.Scalar>) -> String { String(String.UnicodeScalarView(s)) }
+
+    /// The sorted, unique feature indices of a link.
+    public static func features(_ url: String) -> [UInt32] {
+        let u = normalize(url)
+        guard !u.isEmpty else { return [] }
+        let (host, rest, at, port) = split(u)
+        var names: [String] = []
+        let framed = scalars("^" + host + "$")
+        for n in 3...5 where framed.count >= n {
+            for j in 0...(framed.count - n) { names.append("h\(n):" + string(framed[j..<(j + n)])) }
+        }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: true).map(String.init)
+        for l in labels { names.append("hl:" + l) }
+        if let last = labels.last {
+            names.append("tld:" + last)
+            names.append("rd:" + labels.suffix(2).joined(separator: "."))
+        }
+        let restScalars = scalars(rest)
+        let head = Array(restScalars.prefix(120))
+        for n in 3...4 where head.count >= n {
+            for j in 0...(head.count - n) { names.append("p\(n):" + string(head[j..<(j + n)])) }
+        }
+        var tokens: [String] = []
+        var current = String.UnicodeScalarView()
+        for scalar in restScalars {
+            if Featurizer.isWord(scalar) {
+                current.append((48...57).contains(scalar.value) ? "0" : scalar)
+            } else if !current.isEmpty {
+                tokens.append(String(current))
+                current = String.UnicodeScalarView()
+            }
+        }
+        if !current.isEmpty { tokens.append(String(current)) }
+        for t in tokens.prefix(40) { names.append("pt:" + t) }
+        let hostScalars = scalars(host)
+        names.append("hlen:\(min(hostScalars.count / 4, 15))")
+        names.append("dots:\(min(hostScalars.filter { $0 == "." }.count, 8))")
+        names.append("hyph:\(min(hostScalars.filter { $0 == "-" }.count, 5))")
+        if hostScalars.contains(where: { (48...57).contains($0.value) }) { names.append("hdig") }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.count == 4, parts.allSatisfy({ p in !p.isEmpty && p.unicodeScalars.allSatisfy { (48...57).contains($0.value) } && (Int(p) ?? 999) < 256 }) {
+            names.append("ip")
+        }
+        if at { names.append("at") }
+        if port { names.append("port") }
+        let length = restScalars.count
+        names.append("plen:\(length == 0 ? 0 : Int.bitWidth - length.leadingZeroBitCount)")
+        if restScalars.contains("?") { names.append("q") }
+        var path = restScalars
+        for c: Unicode.Scalar in ["?", "#"] {
+            if let i = path.firstIndex(of: c) { path = Array(path[..<i]) }
+        }
+        let segments = string(path[...]).split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        names.append("nseg:\(min(segments.count, 8))")
+        if let last = segments.last, last.contains(".") {
+            let ext = last.split(separator: ".", omittingEmptySubsequences: false).last.map(String.init) ?? ""
+            let n = ext.unicodeScalars.count
+            if n > 0 && n <= 5 && ext.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) }) {
+                names.append("ext:" + ext)
+            }
+        }
+        return Set(names.map { Featurizer.fnv1a($0) % Featurizer.dimension }).sorted()
+    }
+}
+
 /// A linear model with 8-bit weights (a `.mzm` file).
 public struct LinearModel: Sendable {
     public let classes: [String]
@@ -145,7 +246,11 @@ public struct LinearModel: Sendable {
 
     /// The probabilities: one (logistic) for a binary model, a distribution otherwise.
     public func probabilities(_ text: String) -> [Double] {
-        let z = logits(Featurizer.features(text))
+        probabilities(features: Featurizer.features(text))
+    }
+
+    public func probabilities(features: [UInt32]) -> [Double] {
+        let z = logits(features)
         if z.count == 1 { return [1 / (1 + exp(-z[0]))] }
         let m = z.max() ?? 0
         let e = z.map { exp($0 - m) }
@@ -161,11 +266,33 @@ public struct LinearModel: Sendable {
     }
 }
 
-/// The three models of MailZen, loaded once from the package's resources.
+/// What the training measured, as written by ml/train.py (models.json).
+public struct ModelManifest: Codable, Sendable, Hashable {
+    public struct Scam: Codable, Sendable, Hashable {
+        public let accuracy: Double, auc: Double, falsePositives09: Double, recall09: Double
+        public let messages: Int, weights: Int
+    }
+    public struct Category: Codable, Sendable, Hashable { public let accuracy: Double, families: Int, weights: Int }
+    public struct Intent: Codable, Sendable, Hashable { public let accuracy: Double, intents: Int, weights: Int }
+    public struct Link: Codable, Sendable, Hashable {
+        public let auc: Double, falsePositives095: Double, recall095: Double
+        public let links: Int, weights: Int
+    }
+    public let version: String
+    public let scam: Scam
+    public let category: Category
+    public let intent: Intent
+    public let url: Link
+    public let feedback: Int
+}
+
+/// The four models of MailZen, loaded once from the package's resources.
 public final class Models: Sendable {
     public let scam: LinearModel
     public let categories: LinearModel
     public let intents: LinearModel
+    public let links: LinearModel
+    public let manifest: ModelManifest?
 
     public static let shared: Models? = Models()
 
@@ -175,11 +302,18 @@ public final class Models: Sendable {
                   let data = try? Data(contentsOf: url) else { return nil }
             return LinearModel(data: data)
         }
-        guard let s = load("scam"), let c = load("category"), let i = load("intent") else { return nil }
+        guard let s = load("scam"), let c = load("category"), let i = load("intent"), let u = load("url") else { return nil }
         scam = s
         categories = c
         intents = i
+        links = u
+        manifest = (Bundle.module.url(forResource: "models", withExtension: "json"))
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { try? JSONDecoder().decode(ModelManifest.self, from: $0) }
     }
+
+    /// The probability that a link leads to phishing.
+    public func linkProbability(_ url: String) -> Double { links.probabilities(features: URLFeaturizer.features(url))[0] }
 
     /// The probability that a message is a scam, a phishing or a spam.
     public func scamProbability(_ text: String) -> Double { scam.probabilities(text)[0] }

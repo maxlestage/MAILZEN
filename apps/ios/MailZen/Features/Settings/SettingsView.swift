@@ -25,6 +25,9 @@ struct SettingsView: View {
             }
             Section(tr("Analyse", "Analysis", "Análisis")) {
                 LabeledContent(tr("Mode", "Mode", "Modo"), value: tr("Local, sur l’appareil", "Local, on the device", "Local, en el dispositivo"))
+                NavigationLink { ModelsView() } label: {
+                    Label(tr("Intelligence sur l’appareil", "On-device intelligence", "Inteligencia en el dispositivo"), systemImage: "cpu")
+                }
                 Text(tr("Les analyses cloud facultatives (réputation, sandbox) arriveront avec votre consentement explicite.",
                         "Optional cloud analyses (reputation, sandbox) will come with your explicit consent.",
                         "Los análisis opcionales en la nube (reputación, sandbox) llegarán con tu consentimiento explícito."))

@@ -15,8 +15,9 @@ from scipy.sparse import csr_matrix
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
-import corpus, intents
+import corpus, intents, urls
 from features import DIM, features
+from url_features import url_features, normalize as url_normalize, split as url_split
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "apps/ios/MailZenKit/Sources/MailZenKit/Resources"
@@ -24,10 +25,10 @@ TESTS = ROOT / "apps/ios/MailZenKit/Tests/MailZenKitTests/ModelGoldenTests.swift
 CARD = ROOT / "ml/MODEL_CARD.md"
 
 
-def matrix(texts):
+def matrix(texts, featurize=features):
     rows, cols, vals = [], [], []
     for i, t in enumerate(texts):
-        f = features(t)
+        f = featurize(t)
         v = 1.0 / math.sqrt(len(f)) if f else 0.0
         rows += [i] * len(f); cols += f; vals += [v] * len(f)
     return csr_matrix((vals, (rows, cols)), shape=(len(texts), DIM), dtype=np.float32)
@@ -54,14 +55,15 @@ def load_real(data):
 class Quantized:
     """A linear model with int8 weights, as stored in a .mzm file."""
 
-    def __init__(self, classes, coef, intercept):
+    def __init__(self, classes, coef, intercept, featurize=features):
         self.classes = classes
+        self.featurize = featurize
         self.scale = float(np.abs(coef).max() / 127.0)
         self.q = np.clip(np.round(coef / self.scale), -127, 127).astype(np.int8)
         self.bias = intercept.astype(np.float32)
 
     def scores(self, text):
-        f = features(text)
+        f = self.featurize(text)
         if not f:
             s = self.bias.astype(np.float64)
         else:
@@ -70,6 +72,11 @@ class Quantized:
             return np.array([1.0 / (1.0 + math.exp(-s[0]))])
         e = np.exp(s - s.max())
         return e / e.sum()
+
+    def matrix_scores(self, X):
+        """The probabilities of a binary model for the rows of a feature matrix."""
+        z = X @ (self.scale * self.q.astype(np.float64)).T + self.bias.astype(np.float64)
+        return 1.0 / (1.0 + np.exp(-np.asarray(z)[:, 0]))
 
     def write(self, path):
         keep = np.where(np.any(self.q != 0, axis=0))[0]
@@ -103,7 +110,16 @@ def binary_metrics(y, p, threshold=0.5):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", type=Path, required=True)
+    ap.add_argument("--feedback", type=Path, action="append", default=[],
+                    help="corrections exported by the app (Settings, Trained models): JSON lines {text, label, category?}")
     args = ap.parse_args()
+    feedback = []
+    for path in args.feedback:
+        for line in open(path, encoding="utf-8"):
+            if line.strip():
+                r = json.loads(line)
+                feedback.append((r["text"][:3000], int(r["label"]), r.get("category")))
+    print(f"feedback: {len(feedback)} corrections")
     rng = random.Random(42)
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -126,9 +142,9 @@ def main():
     print(f"real {len(real)} ({Counter(y for _, y, _ in real)}), synthetic {len(synth)}: train {len(synth_train)}, test {len(synth_test)}")
 
     # ----- Scam model -----
-    texts = [t for t, _, _ in real_train] + [r[4] for r in synth_train]
-    labels = [y for _, y, _ in real_train] + [r[1] for r in synth_train]
-    weights = [1.0] * len(real_train) + [4.0] * len(synth_train)
+    texts = [t for t, _, _ in real_train] + [r[4] for r in synth_train] + [t for t, _, _ in feedback]
+    labels = [y for _, y, _ in real_train] + [r[1] for r in synth_train] + [y for _, y, _ in feedback]
+    weights = [1.0] * len(real_train) + [4.0] * len(synth_train) + [8.0] * len(feedback)
     X = matrix(texts)
     best = None
     vi = list(range(len(texts))); rng.shuffle(vi); val, tr = vi[: len(vi) // 8], vi[len(vi) // 8 :]
@@ -152,43 +168,78 @@ def main():
         metrics["scam"][f"generated, unseen templates ({lang})"] = binary_metrics([r[1] for r in rows], evaluate(qscam, [r[4] for r in rows]))
     operating = {}
     operating["real (held out)"] = binary_metrics([y for _, y, _ in real_test], evaluate(qscam, [t for t, _, _ in real_test]), 0.9)
+    metrics["scam_075"] = binary_metrics([y for _, y, _ in real_test], evaluate(qscam, [t for t, _, _ in real_test]), 0.75)
     for lang in ("fr", "en", "es"):
         rows = [r for r in synth_test if r[3] == lang]
         operating[f"generated ({lang})"] = binary_metrics([r[1] for r in rows], evaluate(qscam, [r[4] for r in rows]), 0.9)
     metrics["scam_operating"] = operating
-    site = [s.text for s in []]
     print(json.dumps(metrics, indent=1))
 
     # ----- Category model -----
+    # Five folds over whole templates (a template and its translations are kept apart
+    # together), then the model is trained on every template.
     cats = corpus.CATEGORIES
-    ctrain = [r for r in synth_train if r[1] == 1]
-    ctest = [r for r in synth_test if r[1] == 1]
-    cm = LogisticRegression(C=32.0, max_iter=3000)
-    cm.fit(matrix([r[4] for r in ctrain]), [cats.index(r[2]) for r in ctrain])
+    crows = [r for r in synth if r[1] == 1]
+    cX = matrix([r[4] for r in crows]); cy = np.array([cats.index(r[2]) for r in crows])
+    cfold = np.array([int(r[0].split("/")[2]) % 5 for r in crows])
+    per = defaultdict(list); accs = []
+    for k in range(5):
+        m = LogisticRegression(C=16.0, max_iter=3000).fit(cX[cfold != k], cy[cfold != k])
+        p = m.predict(cX[cfold == k]); accs.append(float((p == cy[cfold == k]).mean()))
+        for a, b in zip(cy[cfold == k], p):
+            per[cats[a]].append(a == b)
+    fb = [(t, c) for t, y, c in feedback if y == 1 and c in cats]
+    cm = LogisticRegression(C=16.0, max_iter=3000)
+    cm.fit(matrix([r[4] for r in crows] + [t for t, _ in fb]), list(cy) + [cats.index(c) for _, c in fb],
+           sample_weight=[1.0] * len(crows) + [8.0] * len(fb))
     qcat = Quantized(cats, cm.coef_, cm.intercept_)
-    correct = sum(int(np.argmax(qcat.scores(r[4]))) == cats.index(r[2]) for r in ctest)
-    per = defaultdict(lambda: [0, 0])
-    for r in ctest:
-        per[r[2]][1] += 1; per[r[2]][0] += int(np.argmax(qcat.scores(r[4]))) == cats.index(r[2])
-    metrics["category"] = {"accuracy, unseen templates": correct / len(ctest), "n": len(ctest),
-                           "per family": {k: v[0] / v[1] for k, v in sorted(per.items())}}
+    metrics["category"] = {"accuracy, unseen templates": float(np.mean(accs)), "n": len(crows),
+                           "templates": len({r[0] for r in crows}),
+                           "per family": {k: float(np.mean(v)) for k, v in sorted(per.items())}}
 
     # ----- Intent model -----
+    # Four folds over phrasings (a phrasing and its translations together).
     names = list(intents.merged())
     irows = intents.generate()
-    iheld = lambda tid: int(tid.rsplit("/", 1)[1]) % 4 == 3
-    itrain = [r for r in irows if not iheld(r[0])]
-    itest = [r for r in irows if iheld(r[0])]
-    im = LogisticRegression(C=32.0, max_iter=3000)
-    im.fit(matrix([r[3] for r in itrain]), [names.index(r[1]) for r in itrain])
+    iX = matrix([r[3] for r in irows]); iy = np.array([names.index(r[1]) for r in irows])
+    ifold = np.array([int(r[0].rsplit("/", 1)[1]) % 4 for r in irows])
+    iaccs = []
+    for k in range(4):
+        m = LogisticRegression(C=32.0, max_iter=3000).fit(iX[ifold != k], iy[ifold != k])
+        iaccs.append(float((m.predict(iX[ifold == k]) == iy[ifold == k]).mean()))
+    im = LogisticRegression(C=32.0, max_iter=3000).fit(iX, iy)
     qint = Quantized(names, im.coef_, im.intercept_)
-    icorrect = sum(int(np.argmax(qint.scores(r[3]))) == names.index(r[1]) for r in itest)
-    metrics["intent"] = {"accuracy, unseen phrasings": icorrect / len(itest), "n": len(itest)}
+    metrics["intent"] = {"accuracy, unseen phrasings": float(np.mean(iaccs)), "n": len(irows), "intents": len(names)}
     print(json.dumps({k: v for k, v in metrics.items() if k != "scam"}, indent=1))
+
+    # ----- Link model -----
+    # The URLs of phishing-dataset, kept apart by registrable domain (one in seven
+    # domains for the test), plus generated links like those of emails.
+    def domain(u):
+        labels = url_split(url_normalize(u))[0].split(".")
+        return ".".join(labels[-2:])
+    import zlib
+    ureal = urls.load(args.data / "urls.json")
+    utest_dom = lambda u: zlib.crc32(domain(u).encode()) % 100 < 15
+    utrain = [r for r in ureal if not utest_dom(r[0])]; utest = [r for r in ureal if utest_dom(r[0])]
+    usyn = urls.generate(); rng.shuffle(usyn)
+    ucut = int(len(usyn) * 0.8); usyn_train, usyn_test = usyn[:ucut], usyn[ucut:]
+    uX = matrix([u for u, _ in utrain] + [u for u, _ in usyn_train], url_features)
+    um = LogisticRegression(C=4.0, solver="liblinear", max_iter=200)
+    um.fit(uX, [y for _, y in utrain] + [y for _, y in usyn_train], sample_weight=[1.0] * len(utrain) + [3.0] * len(usyn_train))
+    del uX
+    qurl = Quantized(["phishing"], um.coef_, um.intercept_, url_features)
+    def uprob(rows):
+        return list(qurl.matrix_scores(matrix([u for u, _ in rows], url_features)))
+    metrics["url"] = {}
+    for th in (0.5, 0.95):
+        metrics["url"][f"real, unseen domains, threshold {th}"] = binary_metrics([y for _, y in utest], uprob(utest), th)
+        metrics["url"][f"generated email links, threshold {th}"] = binary_metrics([y for _, y in usyn_test], uprob(usyn_test), th)
+    print(json.dumps(metrics["url"], indent=1))
 
     # ----- Export -----
     sizes = {}
-    for name, model in (("scam", qscam), ("category", qcat), ("intent", qint)):
+    for name, model in (("scam", qscam), ("category", qcat), ("intent", qint), ("url", qurl)):
         sizes[name] = model.write(OUT / f"{name}.mzm")
     print("sizes", sizes)
 
@@ -214,6 +265,13 @@ def main():
         s = qscam.scores(t)[0]
         c = qcat.scores(t); i = qint.scores(t)
         lines.append(f"        try check({lit}, scam: {s:.6f}, category: \"{cats[int(np.argmax(c))]}\", categoryP: {c.max():.6f}, intent: \"{names[int(np.argmax(i))]}\", intentP: {i.max():.6f})")
+    golden_urls = ["https://www.paypal.com/fr/signin", "http://paypaI-secure.xyz/login.php?id=4&amp;x=1", "user@185.23.4.9:8080/a",
+                   "HTTPS://Colissimo-Suivi.top/Paiement/", "www.impots.gouv.fr/accueil#top", "https://bit.ly/3xYz9", "https://exämple.fr/ça",
+                   "https://sub.domain.example.co.uk/path/to/file.html?q=1", "", "https://"]
+    lines += ["    }", "", "    @Test func theLinkModelMatchesTheTraining() throws {", "        let models = try #require(Models.shared)"]
+    for u in golden_urls:
+        lit = json.dumps(u, ensure_ascii=False)
+        lines.append(f"        #expect(abs(models.linkProbability({lit}) - {qurl.scores(u)[0]:.6f}) < 1e-4, {lit})")
     lines += ["    }", "",
               "    func check(_ text: String, scam: Double, category: String, categoryP: Double, intent: String, intentP: Double) throws {",
               "        let models = try #require(Models.shared)",
@@ -225,37 +283,67 @@ def main():
               "    }", "}", ""]
     TESTS.write_text("\n".join(lines))
 
+    # ----- Manifest, read by the app (Settings, Trained models) -----
+    import datetime
+    manifest = {
+        "version": datetime.date.today().isoformat(),
+        "scam": {"accuracy": metrics["scam"]["real (English emails and SMS, held out)"]["accuracy"],
+                 "auc": metrics["scam"]["real (English emails and SMS, held out)"]["roc_auc"],
+                 "falsePositives09": metrics["scam_operating"]["real (held out)"]["false_positive_rate"],
+                 "recall09": metrics["scam_operating"]["real (held out)"]["recall"],
+                 "messages": len(real) + len(synth), "weights": sizes["scam"][0]},
+        "category": {"accuracy": metrics["category"]["accuracy, unseen templates"], "families": len(cats), "weights": sizes["category"][0]},
+        "intent": {"accuracy": metrics["intent"]["accuracy, unseen phrasings"], "intents": len(names), "weights": sizes["intent"][0]},
+        "url": {"auc": metrics["url"]["real, unseen domains, threshold 0.5"]["roc_auc"],
+                "falsePositives095": metrics["url"]["real, unseen domains, threshold 0.95"]["false_positive_rate"],
+                "recall095": metrics["url"]["real, unseen domains, threshold 0.95"]["recall"],
+                "links": len(ureal) + len(usyn), "weights": sizes["url"][0]},
+        "feedback": len(feedback),
+    }
+    (OUT / "models.json").write_text(json.dumps(manifest, indent=1) + "\n")
+
     # ----- Model card -----
     def table(m):
         rows = ["| Jeu d'évaluation | n | Exactitude | Précision | Rappel | F1 | Faux positifs | AUC |", "|---|---|---|---|---|---|---|---|"]
         for k, v in m.items():
             rows.append(f"| {k} | {v['n']} | {v['accuracy']:.3f} | {v['precision']:.3f} | {v['recall']:.3f} | {v['f1']:.3f} | {v['false_positive_rate']:.3f} | {v.get('roc_auc', float('nan')):.3f} |")
         return "\n".join(rows)
+    kb = lambda n: sizes[n][1] // 1024
     card = f"""# Les modèles de MailZen
 
-Trois modèles linéaires (régression logistique), entraînés par [`train.py`](train.py) et exécutés
-**sur l'appareil**, sans serveur : rien de ce que vous analysez ne quitte l'iPhone.
+Quatre modèles linéaires (régression logistique), entraînés par [`train.py`](train.py) et exécutés
+**sur l'appareil**, sans serveur : rien de ce que vous analysez ne quitte l'iPhone. Version
+{manifest['version']}.
 
 | Modèle | Rôle | Classes | Poids gardés | Taille |
 |---|---|---|---|---|
-| `scam` | probabilité qu'un message soit une arnaque, un phishing ou un spam | 1 (logistique) | {sizes['scam'][0]} | {sizes['scam'][1] // 1024} Ko |
-| `category` | famille d'arnaque | {len(cats)} | {sizes['category'][0]} | {sizes['category'][1] // 1024} Ko |
-| `intent` | question posée à ZenAI | {len(names)} | {sizes['intent'][0]} | {sizes['intent'][1] // 1024} Ko |
+| `scam` | probabilité qu'un message soit une arnaque, un phishing ou un spam | 1 (logistique) | {sizes['scam'][0]} | {kb('scam')} Ko |
+| `category` | famille d'arnaque | {len(cats)} | {sizes['category'][0]} | {kb('category')} Ko |
+| `intent` | question posée à ZenAI | {len(names)} | {sizes['intent'][0]} | {kb('intent')} Ko |
+| `url` | probabilité qu'un lien mène à du phishing | 1 (logistique) | {sizes['url'][0]} | {kb('url')} Ko |
 
 ## Caractéristiques
 
-Mots, paires de mots et trigrammes de caractères des mots, hachés (FNV-1a, 2^18) : voir
-[`features.py`](features.py), reproduit à l'identique en Swift et vérifié par des tests dorés.
+- Textes : mots, paires de mots et trigrammes de caractères des mots, hachés (FNV-1a, 2^18) :
+  [`features.py`](features.py).
+- Liens : n-grammes de caractères de l'hôte et du chemin, étiquettes du domaine, extension, forme
+  (longueur, points, tirets, chiffres, adresse IP, `@`, port…) : [`url_features.py`](url_features.py).
+
+Les deux sont reproduits à l'identique en Swift (`Models.swift`) et vérifiés par des tests dorés.
 Les poids sont compressés sur 8 bits ; les mesures ci-dessous sont celles des modèles compressés.
 
 ## Données
 
 - **all-scam-spam** (Apache-2.0, FredZhang7) : emails de spam et légitimes, surtout en anglais ;
-- **phishing-dataset** (Apache-2.0, ealvaradob), partie `texts` : emails et SMS de phishing ;
+- **phishing-dataset** (Apache-2.0, ealvaradob), parties `texts` (emails et SMS) et `urls`
+  ({len(ureal)} liens, sûrs ou de phishing) ;
 - **SMS Spam Collection** (CC BY 4.0, UCI) ;
-- un **corpus généré** ([`corpus.py`](corpus.py)) en français, anglais et espagnol : {len(corpus.templates())} modèles
-  de messages (10 familles d'arnaques et 10 sortes de messages légitimes qui leur ressemblent),
-  remplis de marques, montants, délais et liens variés ; et [`intents.py`](intents.py) pour ZenAI.
+- un **corpus généré** ([`corpus.py`](corpus.py), [`corpus_families.py`](corpus_families.py)) en
+  français, anglais et espagnol : {len(corpus.templates())} modèles de messages (10 familles d'arnaques et
+  10 sortes de messages légitimes qui leur ressemblent), remplis de marques, montants, délais et
+  liens variés ; [`urls.py`](urls.py) pour des liens comme ceux des emails (officiels, petits sites,
+  imitations) ; [`intents.py`](intents.py) et [`intents_more.py`](intents_more.py) pour ZenAI ;
+- les **corrections des utilisateurs** exportées par l'app (`--feedback`) : {len(feedback)} pour cette version.
 
 Les données réelles sont presque toutes en anglais : en français et en espagnol, les modèles
 reposent sur le corpus généré. Les évaluations du corpus généré portent sur des **modèles de
@@ -263,9 +351,9 @@ messages entiers jamais vus à l'entraînement**, mais elles restent plus facile
 
 ## Évaluation
 
-Seuil 0,5 sauf mention. Données réelles : {len(real)} messages après dédoublonnage, 15 % gardés pour le test.
-
 ### `scam`
+
+Seuil 0,5. Données réelles : {len(real)} messages après dédoublonnage, 15 % gardés pour le test.
 
 {table(metrics['scam'])}
 
@@ -275,22 +363,35 @@ Au seuil de **0,9**, celui où l'app ajoute le signal « ressemble à des arnaqu
 
 ### `category`
 
-Exactitude sur des modèles de messages jamais vus : **{metrics['category']['accuracy, unseen templates']:.3f}** (n = {metrics['category']['n']}).
+Validation croisée en 5 parts sur {metrics['category']['templates']} modèles de messages entiers (un modèle et ses
+traductions restent ensemble) : exactitude **{metrics['category']['accuracy, unseen templates']:.3f}**.
 
 {chr(10).join(f"- {k} : {v:.2f}" for k, v in metrics['category']['per family'].items())}
 
 ### `intent`
 
-Exactitude sur des formulations jamais vues : **{metrics['intent']['accuracy, unseen phrasings']:.3f}** (n = {metrics['intent']['n']}).
+Validation croisée en 4 parts sur des formulations jamais vues ({len(names)} intentions) :
+exactitude **{metrics['intent']['accuracy, unseen phrasings']:.3f}**. Quand le modèle hésite (moins de 45 %), ZenAI
+se rabat sur des mots-clés.
+
+### `url`
+
+Liens réels gardés à part **par domaine** (aucun domaine du test n'est vu à l'entraînement) et liens
+générés. L'app n'utilise ce modèle qu'au seuil de **0,95**, et jamais pour un domaine officiel vérifié.
+
+{table(metrics['url'])}
 
 ## Limites
 
 - Un modèle statistique se trompe : il ne décide jamais seul. Le verdict de MailZen reste celui du
-  moteur de règles ; le modèle ajoute un signal (« ressemble à des arnaques connues ») et la
-  famille d'arnaque, que ZenAI explique avec son niveau de confiance.
-- Il ne voit que le texte : ni la réputation des liens, ni le contenu des pièces jointes
-  (c'est le rôle d'Attachment Guard et de Link Guard).
-- Les arnaques évoluent : le modèle doit être réentraîné régulièrement avec de nouveaux exemples.
+  moteur de règles ; les modèles ajoutent des signaux (« ressemble à des arnaques connues »,
+  « lien proche de liens de phishing connus ») et la famille d'arnaque, que ZenAI explique avec
+  son niveau de confiance.
+- Le modèle des liens ne voit que l'adresse : ni la page, ni sa réputation en temps réel. Les
+  petits sites inconnus et les liens de suivi des newsletters sont ses faux positifs les plus
+  fréquents.
+- Les arnaques évoluent : les modèles doivent être réentraînés régulièrement, avec les
+  corrections exportées depuis l'app.
 """
     CARD.write_text(card)
     print("written", OUT, TESTS, CARD)

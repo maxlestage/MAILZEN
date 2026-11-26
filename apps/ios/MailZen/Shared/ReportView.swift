@@ -60,10 +60,19 @@ struct ReportView: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: link.risky ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                                     .foregroundStyle(link.risky ? Theme.danger : Theme.safe)
-                                Text(link.host)
-                                    .font(.system(.footnote, design: .monospaced))
-                                    .foregroundStyle(Theme.text)
-                                    .textSelection(.enabled)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(link.host)
+                                        .font(.system(.footnote, design: .monospaced))
+                                        .foregroundStyle(Theme.text)
+                                        .textSelection(.enabled)
+                                    if Brands.official(link.host) != nil {
+                                        Text(tr("Domaine officiel vérifié", "Verified official domain", "Dominio oficial verificado"))
+                                            .font(.caption2).foregroundStyle(Theme.safe)
+                                    } else if let p = link.modelProbability {
+                                        Text(tr("Modèle des liens", "Link model", "Modelo de enlaces") + " : \(Int((p * 100).rounded())) % phishing")
+                                            .font(.caption2).foregroundStyle(p >= 0.95 ? Theme.danger : Theme.muted)
+                                    }
+                                }
                             }
                         }
                         Text(tr("MailZen n’ouvre jamais ces liens à votre place.", "MailZen never opens these links for you.", "MailZen nunca abre estos enlaces por ti."))
@@ -73,6 +82,9 @@ struct ReportView: View {
                     .card()
                 }
                 advice
+                if let message, !message.analysisText.isEmpty {
+                    FeedbackCard(report: report, message: message)
+                }
                 if report.verdict != .safe, let onSOS {
                     Button(action: onSOS) {
                         Label(tr("J’ai déjà cliqué, que faire ?", "I already clicked, what now?", "Ya hice clic, ¿qué hago?"), systemImage: "lifepreserver")
@@ -84,9 +96,9 @@ struct ReportView: View {
                 }
                 .buttonStyle(GhostButtonStyle())
                 Text(tr(
-                    "Analyse faite sur cet appareil par le moteur de règles de MailZen. Elle ne garantit ni l’innocuité ni la dangerosité d’un message.",
-                    "Analysis made on this device by MailZen’s rules engine. It guarantees neither that a message is harmless nor that it is dangerous.",
-                    "Análisis hecho en este dispositivo por el motor de reglas de MailZen. No garantiza que un mensaje sea inofensivo ni peligroso."))
+                    "Analyse faite sur cet appareil par le moteur de règles et les modèles entraînés de MailZen. Elle ne garantit ni l’innocuité ni la dangerosité d’un message.",
+                    "Analysis made on this device by MailZen’s rules engine and trained models. It guarantees neither that a message is harmless nor that it is dangerous.",
+                    "Análisis hecho en este dispositivo por el motor de reglas y los modelos entrenados de MailZen. No garantiza que un mensaje sea inofensivo ni peligroso."))
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)
             }
@@ -109,6 +121,11 @@ struct ReportView: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
+            if report.trustedSender {
+                Label(tr("Expéditeur de confiance", "Trusted sender", "Remitente de confianza"), systemImage: "person.crop.circle.badge.checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.safe)
+            }
             if let model = report.model {
                 HStack(spacing: 8) {
                     Image(systemName: "cpu").foregroundStyle(Theme.cyanLight)
