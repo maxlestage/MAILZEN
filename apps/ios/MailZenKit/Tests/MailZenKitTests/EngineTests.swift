@@ -3,10 +3,22 @@ import Testing
 @testable import MailZenKit
 
 @Suite struct EngineTests {
-    @Test func theSamplesGetTheExpectedVerdicts() {
+    @Test func theRulesAloneGiveTheExpectedVerdicts() {
         for lang in AppLanguage.allCases {
-            let verdicts = Library.samples.map { Engine.analyze($0.text.text(lang)).verdict }
+            let verdicts = Library.samples.map { Engine.analyze(text: $0.text.text(lang), extra: [], models: false).verdict }
             #expect(verdicts == [.danger, .suspicious, .danger, .safe], "\(lang)")
+        }
+    }
+
+    @Test func theModelsSharpenTheVerdicts() throws {
+        try #require(Models.shared != nil)
+        for lang in AppLanguage.allCases {
+            let reports = Library.samples.map { Engine.analyze($0.text.text(lang)) }
+            #expect(reports[0].verdict == .danger && reports[2].verdict == .danger, "\(lang)")
+            #expect(reports[1].verdict == .suspicious || reports[1].verdict == .danger, "\(lang)")
+            #expect(reports[3].verdict == .safe, "\(lang)")
+            #expect(reports[1].model?.category == .delivery, "the parcel scam is recognized (\(lang))")
+            #expect((reports[3].model?.probability ?? 1) < 0.5, "the newsletter is not a scam (\(lang))")
         }
     }
 
@@ -31,7 +43,7 @@ import Testing
         #expect(containsWord("rib_fournisseur.pdf", "rib"))
         #expect(!containsWord("décrire", "rib"))
         #expect(containsWord("1,99 €", "€"))
-        #expect(Engine.analyze("First, the groups meet at https://example.org/agenda").signals.isEmpty)
+        #expect(Engine.analyze(text: "First, the groups meet at https://example.org/agenda", extra: [], models: false).signals.isEmpty)
     }
 
     @Test func anEmptyTextIsSafeWithALowConfidence() {

@@ -179,7 +179,7 @@ public enum FileAnalyzer {
         // The links found inside, through the link rules of the engine.
         var unique: [String] = []
         for link in links where !unique.contains(link) { unique.append(link) }
-        let linked = Engine.analyze(unique.joined(separator: "\n"))
+        let linked = Engine.analyze(text: unique.joined(separator: "\n"), extra: [], models: false)
         for signal in linked.signals where !signal.rule.isManipulation { push(signal.rule, signal.evidence) }
 
         let score = min(signals.reduce(0) { $0 + $1.rule.weight }, 98)

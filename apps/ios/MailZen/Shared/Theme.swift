@@ -54,6 +54,7 @@ extension Family {
         case .behavior: "brain.head.profile"
         case .identity: "theatermasks"
         case .technical: "server.rack"
+        case .model: "cpu"
         }
     }
 }

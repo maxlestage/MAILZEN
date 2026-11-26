@@ -72,7 +72,7 @@ public enum Verdict: String, CaseIterable, Codable, Sendable {
 
 /// The families of signals.
 public enum Family: String, CaseIterable, Sendable {
-    case sender, link, file, behavior, identity, technical
+    case sender, link, file, behavior, identity, technical, model
 
     public var label: T3 {
         switch self {
@@ -82,6 +82,7 @@ public enum Family: String, CaseIterable, Sendable {
         case .behavior: T3("Comportement", "Behavior", "Comportamiento")
         case .identity: T3("Identité", "Identity", "Identidad")
         case .technical: T3("Technique", "Technical", "Técnica")
+        case .model: T3("Modèle entraîné", "Trained model", "Modelo entrenado")
         }
     }
 }
@@ -94,6 +95,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
     case riskyFile, doubleExtension, macro, qrCode
     case typeMismatch, executable, scriptInDocument, autoAction, embeddedFile, officeMacros
     case externalContent, passwordForm, metaRefresh, archiveRisk, encryptedArchive, zipBomb, formulaInjection
+    case modelScam
 
     public var family: Family {
         switch self {
@@ -105,6 +107,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .riskyFile, .doubleExtension, .macro: .file
         case .typeMismatch, .executable, .scriptInDocument, .autoAction, .embeddedFile, .officeMacros,
              .externalContent, .passwordForm, .metaRefresh, .archiveRisk, .encryptedArchive, .zipBomb, .formulaInjection: .file
+        case .modelScam: .model
         }
     }
 
@@ -145,6 +148,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .encryptedArchive: 18
         case .zipBomb: 40
         case .formulaInjection: 26
+        case .modelScam: 16
         }
     }
 
@@ -193,6 +197,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .encryptedArchive: T3("Archive chiffrée", "Encrypted archive", "Archivo cifrado")
         case .zipBomb: T3("Bombe de décompression", "Decompression bomb", "Bomba de descompresión")
         case .formulaInjection: T3("Formule dangereuse (CSV)", "Dangerous formula (CSV)", "Fórmula peligrosa (CSV)")
+        case .modelScam: T3("Ressemble à des arnaques connues", "Looks like known scams", "Se parece a estafas conocidas")
         }
     }
 
@@ -234,6 +239,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .encryptedArchive: T3("Une archive protégée par mot de passe échappe aux antivirus : c’est voulu.", "A password-protected archive escapes antivirus scans: on purpose.", "Un archivo protegido con contraseña escapa a los antivirus: a propósito.")
         case .zipBomb: T3("Décompresser ce fichier saturerait l’appareil.", "Decompressing this file would overwhelm the device.", "Descomprimir este archivo saturaría el dispositivo.")
         case .formulaInjection: T3("Ouvert dans un tableur, il exécuterait une formule ou une commande.", "Opened in a spreadsheet, it would run a formula or a command.", "Abierto en una hoja de cálculo, ejecutaría una fórmula o un comando.")
+        case .modelScam: T3("Le modèle entraîné de MailZen reconnaît dans ce texte les tournures de très nombreuses arnaques.", "MailZen’s trained model recognizes in this text the wording of many scams.", "El modelo entrenado de MailZen reconoce en este texto la redacción de muchas estafas.")
         }
     }
 }
@@ -259,6 +265,8 @@ public struct Report: Hashable, Sendable {
     public let confidence: Int
     public let signals: [Signal]
     public let links: [DetectedLink]
+    /// What the trained models say, when they ran.
+    public var model: ModelInsight? = nil
 
     public var confidenceLabel: T3 {
         switch confidence {
@@ -473,7 +481,10 @@ public enum Engine {
         return analyze(text: message.analysisText, extra: extra)
     }
 
-    static func analyze(text: String, extra: [Signal]) -> Report {
+    /// Whether the trained models take part (the rules alone otherwise).
+    nonisolated(unsafe) public static var useModels = true
+
+    static func analyze(text: String, extra: [Signal], models: Bool = true) -> Report {
         let lower = text.lowercased()
         var signals: [Signal] = []
         func push(_ rule: Rule, _ evidence: String) {
@@ -556,10 +567,30 @@ public enum Engine {
             push(.money, word)
         }
 
+        let words = lower.split(whereSeparator: \.isWhitespace).count
+        // The trained models: a signal when they are very sure, and the family of scam.
+        var insight: ModelInsight?
+        if useModels, models, words >= 5, let models = Models.shared {
+            let p = models.scamProbability(text)
+            var category: ScamCategory?
+            var categoryProbability = 0.0
+            if p >= 0.5 {
+                let c = models.category(text)
+                if c.probability >= 0.4 {
+                    category = ScamCategory(rawValue: c.label)
+                    categoryProbability = c.probability
+                }
+            }
+            insight = ModelInsight(probability: p, category: category, categoryProbability: categoryProbability)
+            // A message whose links all lead to verified official domains is no
+            // impersonation, however much its wording looks like one.
+            let allOfficial = !links.isEmpty && links.allSatisfy { Brands.official($0.host) != nil }
+            if p >= 0.9 && !allOfficial { push(.modelScam, "\(Int((p * 100).rounded())) %") }
+        }
+
         let raw = signals.reduce(0) { $0 + $1.rule.weight }
         // Authority alone (a newsletter from a city hall) is no danger.
         let score = (signals.count == 1 && signals[0].rule == .authority) ? 4 : min(raw, 98)
-        let words = lower.split(whereSeparator: \.isWhitespace).count
         let confidence: Int
         switch (words, signals.count) {
         case (0...8, _): confidence = 0
@@ -567,6 +598,6 @@ public enum Engine {
         case (_, 2...3) where score < 70: confidence = 1
         default: confidence = 2
         }
-        return Report(score: score, verdict: .of(score: score), confidence: confidence, signals: signals, links: links)
+        return Report(score: score, verdict: .of(score: score), confidence: confidence, signals: signals, links: links, model: insight)
     }
 }

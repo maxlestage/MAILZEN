@@ -109,6 +109,16 @@ struct ReportView: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
+            if let model = report.model {
+                HStack(spacing: 8) {
+                    Image(systemName: "cpu").foregroundStyle(Theme.cyanLight)
+                    Text(tr("Modèle entraîné", "Trained model", "Modelo entrenado") + " : \(Int((model.probability * 100).rounded())) %"
+                         + (model.category.map { " · " + $0.label.localized } ?? ""))
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .multilineTextAlignment(.center)
+                }
+            }
             HStack(spacing: 16) {
                 Label("\(report.signals.count) " + tr("indicateurs", "indicators", "indicadores"), systemImage: "list.bullet.rectangle")
                 Label(tr("Confiance", "Confidence", "Confianza") + " : " + report.confidenceLabel.localized, systemImage: "gauge.with.dots.needle.50percent")
