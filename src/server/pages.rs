@@ -744,8 +744,12 @@ fn site_footer(ctx: &Ctx<'_>) -> Element {
                             div()
                                 .class("footer__legal")
                                 .child(p().text(format!(
-                                    "© 2026 {BRAND} · {}",
+                                    "© 2026 {AUTHOR}. {}",
                                     t(&["Tous droits réservés.", "All rights reserved.", "Todos los derechos reservados."])
+                                )))
+                                .child(p().class("footer__author").text(format!(
+                                    "{} {AUTHOR}",
+                                    t(&["MailZen, créé par", "MailZen, created by", "MailZen, creado por"])
                                 )))
                                 .child(p().class("footer__note").text(t(&[
                                     "MailZen est en cours de développement : les écrans, chiffres et prix présentés sont illustratifs. Les marques citées appartiennent à leurs propriétaires ; les exemples utilisent des domaines fictifs (.example).",

@@ -10,6 +10,9 @@ struct SettingsView: View {
     @AppStorage("onboarded") private var onboarded = true
     @State private var confirmErase = false
 
+    /// The creator of MailZen.
+    static let author = "Maxime Nathan Lestage"
+
     private var version: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -58,6 +61,17 @@ struct SettingsView: View {
             }
             Section(tr("À propos", "About", "Acerca de")) {
                 LabeledContent("Version", value: version)
+                HStack(spacing: 14) {
+                    Image(systemName: "person.fill")
+                        .font(.title3)
+                        .foregroundStyle(Theme.cyan)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tr("Créé par", "Created by", "Creado por")).foregroundStyle(Theme.text)
+                        Text(Self.author).foregroundStyle(Theme.muted)
+                    }
+                }
+                .accessibilityElement(children: .combine)
                 Link(destination: URL(string: "https://maxlestage.github.io/MAILZEN/")!) {
                     Label(tr("Site de MailZen", "MailZen website", "Sitio de MailZen"), systemImage: "globe")
                 }
@@ -67,7 +81,7 @@ struct SettingsView: View {
                 Link(destination: URL(string: "https://maxlestage.github.io/MAILZEN/\(AppLanguage.current.rawValue)/legal/")!) {
                     Label(tr("Mentions légales", "Legal notice", "Aviso legal"), systemImage: "doc.plaintext")
                 }
-                Text("© 2026 MailZen · " + tr("Avant de cliquer, vérifiez.", "Before you click, check.", "Antes de hacer clic, verifica."))
+                Text("© 2026 \(Self.author). " + tr("Tous droits réservés.", "All rights reserved.", "Todos los derechos reservados."))
                     .font(.footnote).foregroundStyle(Theme.muted)
             }
         }
