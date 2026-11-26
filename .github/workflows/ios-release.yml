@@ -107,10 +107,23 @@ jobs:
         if: steps.config.outputs.ready == 'true'
         env:
           TEAM: ${{ steps.asc.outputs.team_id }}
+          APP_GROUP_READY: ${{ vars.APP_GROUP_READY }}
         run: |
           set -euo pipefail
           brew install xcodegen
           cd apps/ios
+          if [ "$APP_GROUP_READY" != "true" ]; then
+            # The App Group cannot be created through the API: without it, sign without the
+            # shared container (the app and the share extension then keep their own lists).
+            python3 - <<'PY'
+          import re
+          p = "project.yml"
+          s = open(p).read()
+          s = re.sub(r"\n    entitlements:\n      path: [^\n]+\n      properties:\n        com\.apple\.security\.application-groups: \[[^\]]*\]", "", s)
+          open(p, "w").write(s)
+          PY
+            echo "::notice::Signed without the App Group: create group.com.maxlestage.mailzen in developer.apple.com (Identifiers → App Groups), add it to both bundle IDs, then set the repository variable APP_GROUP_READY to true."
+          fi
           xcodegen generate
           key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
           printf '%s' "$ASC_KEY_P8" > "$key"
