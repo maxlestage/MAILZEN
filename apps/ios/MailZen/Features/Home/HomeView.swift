@@ -100,6 +100,10 @@ struct HomeView: View {
                 }
                 .buttonStyle(GhostButtonStyle())
             }
+            NavigationLink { BrandCheckView() } label: {
+                Label("Brand Check", systemImage: "checkmark.seal")
+            }
+            .buttonStyle(GhostButtonStyle(tint: Theme.cyanLight))
         }
         .appear(delay: 0.3)
     }
@@ -132,7 +136,7 @@ struct HomeView: View {
             SectionTitle(eyebrow: "Radar", title: tr("Dernières analyses", "Latest analyses", "Últimos análisis"))
             ForEach(records.prefix(4)) { record in
                 NavigationLink {
-                    ReportView(report: record.input.report, title: record.title, onSOS: { model.showSOS = true })
+                    RecordReportView(record: record, onSOS: { model.showSOS = true })
                 } label: {
                     HistoryRow(record: record)
                 }

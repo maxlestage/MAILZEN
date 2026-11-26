@@ -78,7 +78,7 @@ struct HistoryView: View {
             }
             ForEach(shown) { record in
                 NavigationLink {
-                    ReportView(report: record.input.report, title: record.title, onSOS: { model.showSOS = true })
+                    RecordReportView(record: record, onSOS: { model.showSOS = true })
                 } label: {
                     HistoryRow(record: record)
                 }

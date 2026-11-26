@@ -6,6 +6,20 @@ struct LearnView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                NavigationLink { BrandCheckView() } label: {
+                    HStack(spacing: 14) {
+                        IconBox(systemName: "checkmark.seal")
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Brand Check").font(.headline).foregroundStyle(Theme.text)
+                            Text(tr("Ce domaine est-il vraiment celui de la marque ?", "Is this domain really the brand’s?", "¿Este dominio es realmente de la marca?"))
+                                .font(.caption).foregroundStyle(Theme.muted)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                    }
+                    .card()
+                }
+                .buttonStyle(.plain)
                 SectionTitle(eyebrow: "ZenLearn", title: tr("Vrai ou faux lien ?", "Real or fake link?", "¿Enlace real o falso?"))
                 QuizView().card()
                 SectionTitle(eyebrow: "Social engineering", title: tr("Les techniques de manipulation", "Manipulation techniques", "Técnicas de manipulación"))

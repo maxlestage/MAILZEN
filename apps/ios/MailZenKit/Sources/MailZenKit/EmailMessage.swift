@@ -7,6 +7,11 @@ public struct EmailMessage: Sendable, Hashable {
         public let filename: String
         public let mimeType: String
         public let size: Int
+        /// The decoded bytes, for Attachment Guard.
+        public let data: Data
+
+        /// The analysis of the file.
+        public var analysis: FileReport { FileAnalyzer.analyze(data: data, filename: filename) }
     }
 
     public let from: String?
@@ -182,7 +187,7 @@ enum MIME {
         let isAttachment = disposition.lowercased().hasPrefix("attachment") || (filename != nil && !mimeType.hasPrefix("text/"))
         if isAttachment || !(mimeType == "text/plain" || mimeType == "text/html") {
             if let filename {
-                collector.attachments.append(.init(filename: filename, mimeType: mimeType, size: data.count))
+                collector.attachments.append(.init(filename: filename, mimeType: mimeType, size: data.count, data: data))
             }
             return
         }
