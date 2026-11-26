@@ -1,54 +1,88 @@
 import SwiftUI
 import MailZenKit
 
-/// Connect a mailbox over IMAP (with an app-specific password), then watch it.
+/// The mailboxes: every account, a unified inbox, the folders of each account, and every
+/// message, page by page.
 struct MailboxView: View {
     @Environment(MailboxService.self) private var mailbox
-    @State private var email = ""
-    @State private var password = ""
-    @State private var provider = MailProvider.all[0]
-    @State private var host = ""
-    @State private var connected = false
+    @State private var adding = false
+    @State private var removing: MailAccount?
+
+    static let inbox = IMAPFolder(name: "INBOX", delimiter: "/", flags: [])
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if let account = mailbox.account {
-                    watching(account)
+                if mailbox.accounts.isEmpty {
+                    AddMailboxForm {}
                 } else {
-                    form
+                    accounts
                 }
-                promises
+                MailboxPromises()
             }
             .padding()
-            .animation(.spring(response: 0.5, dampingFraction: 0.85), value: mailbox.account)
+            .animation(.spring(response: 0.5, dampingFraction: 0.85), value: mailbox.accounts)
         }
         .background(AppBackground())
-        .navigationTitle(tr("Boîte mail", "Mailbox", "Buzón"))
+        .navigationTitle(tr("Boîtes mail", "Mailboxes", "Buzones"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !mailbox.accounts.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { adding = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(tr("Ajouter une boîte", "Add a mailbox", "Añadir un buzón"))
+                }
+            }
+        }
+        .sheet(isPresented: $adding) {
+            NavigationStack {
+                ScrollView { AddMailboxForm { adding = false }.padding() }
+                    .background(AppBackground())
+                    .navigationTitle(tr("Ajouter une boîte", "Add a mailbox", "Añadir un buzón"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(tr("Annuler", "Cancel", "Cancelar")) { adding = false }
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
+        }
+        .confirmationDialog(tr("Déconnecter cette boîte ?", "Disconnect this mailbox?", "¿Desconectar este buzón?"),
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing) { account in
+            Button(tr("Déconnecter \(account.email)", "Disconnect \(account.email)", "Desconectar \(account.email)"), role: .destructive) {
+                mailbox.disconnect(account)
+            }
+        }
+        .task { await mailbox.checkNow() }
     }
 
-    // MARK: Connected
+    private var accounts: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            NavigationLink {
+                MailListView(title: tr("Toutes les boîtes de réception", "All inboxes", "Todas las bandejas de entrada"),
+                             sources: mailbox.accounts.map { MailSource(account: $0, folder: Self.inbox) })
+            } label: {
+                HStack(spacing: 14) {
+                    PulseIcon(systemName: "tray.2.fill", tint: Theme.cyan)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tr("Toutes les boîtes de réception", "All inboxes", "Todas las bandejas de entrada"))
+                            .font(.headline).foregroundStyle(Theme.text)
+                        Text(tr("\(mailbox.accounts.count) boîte(s) · tous les emails, chacun analysé", "\(mailbox.accounts.count) mailbox(es) · every email, each analyzed", "\(mailbox.accounts.count) buzón(es) · todos los correos, cada uno analizado"))
+                            .font(.caption).foregroundStyle(Theme.muted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.muted)
+                }
+                .card(tint: Theme.cyan.opacity(0.4))
+            }
+            .buttonStyle(.plain)
 
-    private func watching(_ account: MailAccount) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                PulseIcon(systemName: "tray.full.fill", tint: Theme.safe)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(account.email).font(.headline).foregroundStyle(Theme.text)
-                    Text(account.host).font(.caption.monospaced()).foregroundStyle(Theme.muted)
-                    Text(mailbox.statusLine).font(.caption).foregroundStyle(Theme.cyanLight)
-                }
+            ForEach(mailbox.accounts) { account in
+                accountCard(account)
             }
-            Toggle(isOn: Binding(get: { account.watching }, set: { mailbox.setWatching($0) })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("Veille automatique", "Automatic watch", "Vigilancia automática")).foregroundStyle(Theme.text)
-                    Text(tr("Une notification si un email dangereux arrive.", "A notification if a dangerous email arrives.", "Una notificación si llega un correo peligroso."))
-                        .font(.caption).foregroundStyle(Theme.muted)
-                }
-            }
-            .tint(Theme.safe)
-            .card()
+
             Button {
                 Task { await mailbox.checkNow() }
             } label: {
@@ -60,35 +94,72 @@ struct MailboxView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(mailbox.checking)
-            if !mailbox.checking, account.lastCheck != nil {
-                Text(mailbox.lastFound == 0
-                     ? tr("Aucun nouvel email.", "No new email.", "Ningún correo nuevo.")
-                     : tr("\(mailbox.lastFound) email(s) analysé(s), voir l’historique.", "\(mailbox.lastFound) email(s) analyzed, see the history.", "\(mailbox.lastFound) correo(s) analizado(s), ver el historial."))
-                    .font(.footnote).foregroundStyle(Theme.muted)
-            }
             if let error = mailbox.lastError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Theme.suspicious)
             }
-            Text(tr("iOS réveille MailZen de temps en temps (en général toutes les 15 minutes à quelques heures, selon votre usage) : l’alerte n’est pas instantanée. Ouvrir l’app vérifie tout de suite.",
-                    "iOS wakes MailZen from time to time (usually every 15 minutes to a few hours, depending on your use): the alert is not instant. Opening the app checks right away.",
-                    "iOS despierta MailZen de vez en cuando (normalmente cada 15 minutos a unas horas, según tu uso): la alerta no es instantánea. Abrir la app comprueba al momento."))
-                .font(.caption).foregroundStyle(Theme.muted)
-            Button(role: .destructive) { mailbox.disconnect() } label: {
-                Label(tr("Déconnecter cette boîte", "Disconnect this mailbox", "Desconectar este buzón"), systemImage: "xmark.circle")
+            Button { adding = true } label: {
+                Label(tr("Ajouter une boîte mail", "Add a mailbox", "Añadir un buzón"), systemImage: "plus.circle")
             }
-            .buttonStyle(GhostButtonStyle(tint: Theme.danger))
+            .buttonStyle(GhostButtonStyle(tint: Theme.cyanLight))
+            Text(tr("Les listes se chargent par pages de 30 emails, au fil du défilement, et se mettent à jour toutes les minutes tant qu’elles sont ouvertes. En arrière-plan, iOS réveille MailZen de temps en temps (de 15 minutes à quelques heures) pour vérifier les boîtes veillées.",
+                    "Lists load 30 emails at a time as you scroll, and update every minute while they are open. In the background, iOS wakes MailZen from time to time (15 minutes to a few hours) to check the watched mailboxes.",
+                    "Las listas se cargan de 30 en 30 correos al desplazarte y se actualizan cada minuto mientras están abiertas. En segundo plano, iOS despierta MailZen de vez en cuando (de 15 minutos a unas horas) para comprobar los buzones vigilados."))
+                .font(.caption).foregroundStyle(Theme.muted)
         }
-        .task { if account.watching { await mailbox.checkNow() } }
     }
 
-    // MARK: Form
+    private func accountCard(_ account: MailAccount) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NavigationLink {
+                AccountFoldersView(account: account)
+            } label: {
+                HStack(spacing: 12) {
+                    IconBox(systemName: "tray.full.fill", tint: Theme.safe, size: 40)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(account.email).font(.headline).foregroundStyle(Theme.text).lineLimit(1).minimumScaleFactor(0.8)
+                        Text(account.host).font(.caption.monospaced()).foregroundStyle(Theme.muted)
+                        Text(mailbox.status(of: account)).font(.caption).foregroundStyle(Theme.cyanLight)
+                    }
+                    Spacer()
+                    VStack(spacing: 2) {
+                        Image(systemName: "folder").foregroundStyle(Theme.cyanLight)
+                        Text(tr("Dossiers", "Folders", "Carpetas")).font(.caption2).foregroundStyle(Theme.muted)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            Toggle(isOn: Binding(get: { account.watching }, set: { mailbox.setWatching(account, $0) })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("Veille automatique", "Automatic watch", "Vigilancia automática")).font(.subheadline).foregroundStyle(Theme.text)
+                    Text(tr("Une notification si un email dangereux arrive.", "A notification if a dangerous email arrives.", "Una notificación si llega un correo peligroso."))
+                        .font(.caption).foregroundStyle(Theme.muted)
+                }
+            }
+            .tint(Theme.safe)
+            Button(role: .destructive) { removing = account } label: {
+                Label(tr("Déconnecter", "Disconnect", "Desconectar"), systemImage: "xmark.circle").font(.footnote.weight(.semibold))
+            }
+            .foregroundStyle(Theme.danger)
+        }
+        .card()
+    }
+}
 
-    private var form: some View {
+/// Connect a mailbox over IMAP, with an app-specific password.
+struct AddMailboxForm: View {
+    @Environment(MailboxService.self) private var mailbox
+    @State private var email = ""
+    @State private var password = ""
+    @State private var provider = MailProvider.all[0]
+    @State private var host = ""
+    let onDone: () -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionTitle(eyebrow: tr("Connexion", "Sign in", "Conexión"), title: tr("Connectez votre boîte mail", "Connect your mailbox", "Conecta tu buzón"))
-            Text(tr("MailZen lit vos nouveaux emails en lecture seule, les analyse sur l’iPhone et vous prévient en cas de danger. Ils restent non lus dans votre messagerie.",
-                    "MailZen reads your new emails read-only, analyzes them on the iPhone and warns you of any danger. They stay unread in your mail app.",
-                    "MailZen lee tus correos nuevos en modo solo lectura, los analiza en el iPhone y te avisa si hay peligro. Siguen sin leer en tu correo."))
+            Text(tr("MailZen affiche tous vos emails et tous vos dossiers en lecture seule, analyse chacun sur l’iPhone et vous prévient en cas de danger. Ils restent non lus dans votre messagerie. Ajoutez autant de boîtes que vous voulez.",
+                    "MailZen shows all your emails and all your folders read-only, analyzes each one on the iPhone and warns you of any danger. They stay unread in your mail app. Add as many mailboxes as you like.",
+                    "MailZen muestra todos tus correos y carpetas en modo solo lectura, analiza cada uno en el iPhone y te avisa si hay peligro. Siguen sin leer en tu correo. Añade tantos buzones como quieras."))
                 .font(.subheadline).foregroundStyle(Theme.muted)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -124,6 +195,8 @@ struct MailboxView: View {
                 Task {
                     if await mailbox.connect(email: email.trimmingCharacters(in: .whitespaces), password: password, host: server) {
                         password = ""
+                        email = ""
+                        onDone()
                     }
                 }
             } label: {
@@ -163,15 +236,17 @@ struct MailboxView: View {
             .foregroundStyle(Theme.text)
         }
     }
+}
 
-    private var promises: some View {
+struct MailboxPromises: View {
+    var body: some View {
         let items: [(String, String)] = [
             ("eye", tr("Lecture seule : vos emails restent non lus", "Read-only: your emails stay unread", "Solo lectura: tus correos siguen sin leer")),
             ("key.fill", tr("Un mot de passe pour app, jamais le vôtre", "An app password, never your own", "Una contraseña para apps, nunca la tuya")),
             ("lock.iphone", tr("Gardé dans le trousseau de cet iPhone", "Kept in this iPhone’s Keychain", "Guardada en el llavero de este iPhone")),
             ("cpu", tr("Analyse sur l’appareil, rien n’est envoyé", "Analyzed on the device, nothing sent", "Análisis en el dispositivo, nada se envía")),
         ]
-        return VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(items, id: \.1) { item in
                 Label(item.1, systemImage: item.0).font(.footnote).foregroundStyle(Theme.muted)
             }

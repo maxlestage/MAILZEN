@@ -23,7 +23,10 @@ struct SettingsView: View {
         List {
             Section(tr("Boîte mail", "Mailbox", "Buzón")) {
                 NavigationLink { MailboxView() } label: {
-                    Label(mailbox.account?.email ?? tr("Connecter une boîte mail", "Connect a mailbox", "Conectar un buzón"), systemImage: "tray.full")
+                    Label(mailbox.accounts.isEmpty ? tr("Connecter une boîte mail", "Connect a mailbox", "Conectar un buzón")
+                          : mailbox.accounts.count == 1 ? mailbox.accounts[0].email
+                          : tr("\(mailbox.accounts.count) boîtes mail", "\(mailbox.accounts.count) mailboxes", "\(mailbox.accounts.count) buzones"),
+                          systemImage: "tray.full")
                 }
             }
             Section(tr("Analyse", "Analysis", "Análisis")) {
