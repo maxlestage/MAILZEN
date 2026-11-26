@@ -66,7 +66,7 @@ struct HomeView: View {
             (tr("Analyses", "Analyses", "Análisis"), records.count, "envelope.fill", Theme.cyan),
             (tr("Suspects", "Suspicious", "Sospechosos"), suspicious, "exclamationmark.triangle.fill", Theme.suspicious),
             (tr("Liens à risque", "Risky links", "Enlaces de riesgo"), riskyLinks, "link", Theme.danger),
-            (tr("Boîtes veillées", "Watched mailboxes", "Buzones vigilados"), mailbox.account == nil ? 0 : 1, "tray.full.fill", Theme.safe),
+            (tr("Boîtes veillées", "Watched mailboxes", "Buzones vigilados"), mailbox.accounts.count, "tray.full.fill", Theme.safe),
         ]
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
@@ -114,7 +114,10 @@ struct HomeView: View {
                 IconBox(systemName: mailbox.account == nil ? "tray" : "tray.full.fill", tint: mailbox.account == nil ? Theme.cyanLight : Theme.safe)
                 VStack(alignment: .leading, spacing: 4) {
                     if let account = mailbox.account {
-                        Text(account.email).font(.headline).foregroundStyle(Theme.text)
+                        Text(mailbox.accounts.count > 1
+                             ? tr("\(mailbox.accounts.count) boîtes mail", "\(mailbox.accounts.count) mailboxes", "\(mailbox.accounts.count) buzones")
+                             : account.email)
+                            .font(.headline).foregroundStyle(Theme.text)
                         Text(mailbox.statusLine).font(.caption).foregroundStyle(Theme.muted)
                     } else {
                         Text(tr("Connectez votre boîte mail", "Connect your mailbox", "Conecta tu buzón")).font(.headline).foregroundStyle(Theme.text)

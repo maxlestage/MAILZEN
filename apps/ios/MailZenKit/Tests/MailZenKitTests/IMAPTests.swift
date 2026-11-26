@@ -39,6 +39,14 @@ actor FakeServer: IMAPTransport {
                 reply += String(decoding: body, as: UTF8.self) + ")\r\n"
             }
             reply += "\(tag) OK FETCH done\r\n"
+        } else if command.hasPrefix("LIST") {
+            reply = "* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n"
+                + "* LIST (\\HasNoChildren \\Sent) \"/\" \"Sent Messages\"\r\n"
+                + "* LIST (\\HasNoChildren \\Junk) \"/\" Junk\r\n"
+                + "* LIST (\\Noselect \\HasChildren) \"/\" \"[Gmail]\"\r\n"
+                + "* LIST (\\HasNoChildren) \"/\" {13}\r\nProjets/2026 \r\n"
+                + "* LIST (\\HasNoChildren) \"/\" \"Re&AOc-us\"\r\n"
+                + "\(tag) OK LIST done\r\n"
         } else if command.hasPrefix("LOGOUT") {
             reply = "* BYE\r\n\(tag) OK LOGOUT\r\n"
         }

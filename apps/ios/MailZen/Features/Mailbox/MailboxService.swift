@@ -6,7 +6,8 @@ import BackgroundTasks
 import MailZenKit
 
 /// The mailbox watched by MailZen, without its password (kept in the Keychain).
-struct MailAccount: Codable, Equatable {
+struct MailAccount: Codable, Equatable, Hashable, Identifiable {
+    var id: String { email }
     var email: String
     var host: String
     var port: UInt16 = 993
@@ -61,27 +62,38 @@ enum Keychain {
 final class MailboxService {
     static let shared = MailboxService()
     nonisolated static let refreshTaskID = "com.maxlestage.mailzen.refresh"
-    nonisolated private static let accountKey = "mailAccount"
+    nonisolated private static let accountsKey = "mailAccounts"
+    nonisolated private static let legacyAccountKey = "mailAccount"
 
-    private(set) var account: MailAccount?
+    /// Every connected mailbox.
+    private(set) var accounts: [MailAccount] = []
     private(set) var checking = false
     var lastError: String?
     private(set) var lastFound = 0
 
+    /// The first mailbox (for the summaries of the home screen).
+    var account: MailAccount? { accounts.first }
+
     init() {
-        account = Self.loadAccount()
+        accounts = Self.loadAccounts()
     }
 
     var statusLine: String {
-        guard let account else { return "" }
         if checking { return tr("Vérification…", "Checking…", "Comprobando…") }
+        guard let last = accounts.compactMap(\.lastCheck).max() else {
+            return accounts.isEmpty ? "" : tr("Jamais vérifiée", "Never checked", "Nunca comprobado")
+        }
+        return tr("Vérifiée ", "Checked ", "Comprobado ") + last.formatted(.relative(presentation: .named))
+    }
+
+    func status(of account: MailAccount) -> String {
         guard let last = account.lastCheck else { return tr("Jamais vérifiée", "Never checked", "Nunca comprobado") }
         return tr("Vérifiée ", "Checked ", "Comprobado ") + last.formatted(.relative(presentation: .named))
     }
 
-    // MARK: Account
+    // MARK: Accounts
 
-    /// Tries the address and password, analyzes the last messages, then saves the account.
+    /// Tries the address and password, analyzes the last messages, then adds the mailbox.
     func connect(email: String, password: String, host: String, port: UInt16 = 993) async -> Bool {
         lastError = nil
         checking = true
@@ -93,7 +105,7 @@ final class MailboxService {
             new.uidValidity = check.uidValidity
             new.lastCheck = .now
             Keychain.save(password, for: email)
-            save(new)
+            update(new)
             Self.record(check, notify: false)
             lastFound = check.items.count
             await Self.requestNotifications()
@@ -105,56 +117,82 @@ final class MailboxService {
         }
     }
 
-    func disconnect() {
-        if let account { Keychain.delete(account.email) }
-        UserDefaults.standard.removeObject(forKey: Self.accountKey)
-        account = nil
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.refreshTaskID)
-    }
-
-    func setWatching(_ on: Bool) {
-        guard var account else { return }
-        account.watching = on
-        save(account)
-        if on {
-            Self.scheduleRefresh()
-        } else {
+    func disconnect(_ account: MailAccount) {
+        Keychain.delete(account.email)
+        accounts.removeAll { $0.email == account.email }
+        persist()
+        if !accounts.contains(where: \.watching) {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.refreshTaskID)
         }
     }
 
-    /// Checks the inbox now and records the new messages.
+    func setWatching(_ account: MailAccount, _ on: Bool) {
+        var changed = account
+        changed.watching = on
+        update(changed)
+        if on {
+            Self.scheduleRefresh()
+        } else if !accounts.contains(where: \.watching) {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.refreshTaskID)
+        }
+    }
+
+    func password(for account: MailAccount) -> String? { Keychain.password(for: account.email) }
+
+    /// Checks the inbox of every watched mailbox now and records the new messages.
     func checkNow() async {
-        guard let account, let password = Keychain.password(for: account.email) else { return }
+        guard !checking else { return }
         lastError = nil
         checking = true
         defer { checking = false }
-        do {
-            let check = try await MailboxWatcher.check(
-                host: account.host, port: account.port, user: account.email, password: password,
-                lastUID: account.lastUID, uidValidity: account.uidValidity)
-            var updated = account
-            updated.lastUID = check.lastUID
-            updated.uidValidity = check.uidValidity
-            updated.lastCheck = .now
-            save(updated)
-            Self.record(check, notify: true)
-            lastFound = check.items.count
-        } catch {
-            lastError = Self.describe(error)
+        var found = 0
+        for account in accounts where account.watching {
+            guard let password = Keychain.password(for: account.email) else { continue }
+            do {
+                let check = try await MailboxWatcher.check(
+                    host: account.host, port: account.port, user: account.email, password: password,
+                    lastUID: account.lastUID, uidValidity: account.uidValidity)
+                var updated = account
+                updated.lastUID = check.lastUID
+                updated.uidValidity = check.uidValidity
+                updated.lastCheck = .now
+                update(updated)
+                Self.record(check, notify: true)
+                found += check.items.count
+            } catch {
+                lastError = account.email + " : " + Self.describe(error)
+            }
+        }
+        lastFound = found
+    }
+
+    private func update(_ account: MailAccount) {
+        if let i = accounts.firstIndex(where: { $0.email == account.email }) {
+            accounts[i] = account
+        } else {
+            accounts.append(account)
+        }
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(accounts) {
+            UserDefaults.standard.set(data, forKey: Self.accountsKey)
         }
     }
 
-    private func save(_ new: MailAccount) {
-        account = new
-        if let data = try? JSONEncoder().encode(new) {
-            UserDefaults.standard.set(data, forKey: Self.accountKey)
+    nonisolated static func loadAccounts() -> [MailAccount] {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: accountsKey), let saved = try? JSONDecoder().decode([MailAccount].self, from: data) {
+            return saved
         }
-    }
-
-    nonisolated static func loadAccount() -> MailAccount? {
-        guard let data = UserDefaults.standard.data(forKey: accountKey) else { return nil }
-        return try? JSONDecoder().decode(MailAccount.self, from: data)
+        // The single mailbox of earlier versions.
+        if let data = defaults.data(forKey: legacyAccountKey), let old = try? JSONDecoder().decode(MailAccount.self, from: data) {
+            if let encoded = try? JSONEncoder().encode([old]) { defaults.set(encoded, forKey: accountsKey) }
+            defaults.removeObject(forKey: legacyAccountKey)
+            return [old]
+        }
+        return []
     }
 
     nonisolated static func describe(_ error: Error) -> String {
@@ -171,24 +209,31 @@ final class MailboxService {
         try? BGTaskScheduler.shared.submit(request)
     }
 
-    /// The background check: new messages are analyzed, the dangerous ones notified.
+    /// The background check of every watched mailbox: new messages are analyzed, the
+    /// dangerous ones notified.
     nonisolated static func backgroundRefresh() async {
-        guard var account = loadAccount(), account.watching,
-              let password = Keychain.password(for: account.email) else { return }
+        var accounts = loadAccounts()
+        guard accounts.contains(where: \.watching) else { return }
         scheduleRefresh()
-        guard let check = try? await MailboxWatcher.check(
-            host: account.host, port: account.port, user: account.email, password: password,
-            lastUID: account.lastUID, uidValidity: account.uidValidity) else { return }
-        account.lastUID = check.lastUID
-        account.uidValidity = check.uidValidity
-        account.lastCheck = .now
-        if let data = try? JSONEncoder().encode(account) {
-            UserDefaults.standard.set(data, forKey: accountKey)
+        var checks: [MailboxCheck] = []
+        for (i, account) in accounts.enumerated() where account.watching {
+            guard let password = Keychain.password(for: account.email),
+                  let check = try? await MailboxWatcher.check(
+                    host: account.host, port: account.port, user: account.email, password: password,
+                    lastUID: account.lastUID, uidValidity: account.uidValidity) else { continue }
+            accounts[i].lastUID = check.lastUID
+            accounts[i].uidValidity = check.uidValidity
+            accounts[i].lastCheck = .now
+            checks.append(check)
         }
-        let saved = account
+        if let data = try? JSONEncoder().encode(accounts) {
+            UserDefaults.standard.set(data, forKey: accountsKey)
+        }
+        let saved = accounts
+        let found = checks
         await MainActor.run {
-            record(check, notify: true)
-            shared.account = saved
+            for check in found { record(check, notify: true) }
+            shared.accounts = saved
         }
     }
 
@@ -221,7 +266,7 @@ final class MailboxService {
         content.body = [from, item.message.subject ?? ""].filter { !$0.isEmpty }.joined(separator: " — ")
         content.subtitle = item.report.signals.first?.rule.title.localized ?? ""
         content.sound = .default
-        let request = UNNotificationRequest(identifier: "mail-\(item.uid)", content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: "mail-\(item.uid)-\(item.message.messageID ?? item.message.subject ?? "")", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 }
