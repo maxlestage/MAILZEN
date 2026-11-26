@@ -127,14 +127,19 @@ struct ZenAIView: View {
         let text = question.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         question = ""
-        ask(text, intent: ZenAI.intent(of: text))
+        let understood = ZenAI.understand(text)
+        ask(text, intent: understood.intent, free: !understood.understood)
     }
 
-    private func ask(_ text: String, intent: ZenAI.Intent) {
+    /// `free`: a question outside the known topics. Apple Intelligence, when the iPhone has
+    /// it, answers it from every fact of the analysis; otherwise ZenAI lays the facts out.
+    private func ask(_ text: String, intent: ZenAI.Intent, free: Bool = false) {
         withAnimation(.spring) { bubbles.append(Bubble(fromUser: true, lines: [text])) }
         typing = true
         Task {
-            let lines = ZenAI.answer(intent, report: report, message: message)
+            let lines = free
+                ? (OnDeviceModel.isAvailable ? ZenAI.facts(report: report, message: message) : ZenAI.fallback(report: report, message: message))
+                : ZenAI.answer(intent, report: report, message: message)
             var phrased: String?
             if OnDeviceModel.isAvailable {
                 phrased = await OnDeviceModel.phrase(question: text, facts: lines)

@@ -7,6 +7,8 @@ import Foundation
 public enum ZenAI {
     public enum Intent: String, CaseIterable, Sendable {
         case why, sender, link, file, reply, verify, clicked, password, report, money, summary, kind, block
+        /// A question outside the known topics: answered from every fact of the analysis.
+        case other
     }
 
     /// The suggested questions, in the order of the content.
@@ -33,18 +35,96 @@ public enum ZenAI {
     /// The intent of a free question: the trained model when it is sure enough, the
     /// keywords otherwise.
     public static func intent(of question: String) -> Intent {
+        understand(question).intent
+    }
+
+    /// The intent of a free question, and whether it was understood (by the model or by a
+    /// keyword). When it was not, ZenAI answers from every fact of the analysis.
+    public static func understand(_ question: String) -> (intent: Intent, understood: Bool) {
         if let models = Models.shared {
-            let guess = models.intent(question)
-            if guess.probability >= 0.45, let intent = Intent(rawValue: guess.label) {
-                return intent
+            let features = Featurizer.features(question)
+            let p = models.intents.probabilities(features: features)
+            let best = p.indices.max { p[$0] < p[$1] } ?? 0
+            // Understood: the model is sure enough, knows most of the words, and does not
+            // see a question outside the known topics.
+            if p[best] >= 0.45, models.intents.coverage(features) >= 0.5,
+               let intent = Intent(rawValue: models.intents.classes[best]) {
+                return intent == .other ? (.other, false) : (intent, true)
             }
         }
         let q = question.lowercased()
-        return keywords.first { $0.1.contains { q.contains($0) } }?.0 ?? .summary
+        if let found = keywords.first(where: { $0.1.contains { q.contains($0) } })?.0 {
+            return (found, true)
+        }
+        return (.other, false)
+    }
+
+    /// Everything the analysis established: the facts a free question is answered from,
+    /// whatever it is about.
+    public static func facts(report: Report, message: EmailMessage?) -> [String] {
+        let verdict = report.verdict.title.localized
+        var lines = [tr("Verdict : \(verdict), \(report.score)/100, confiance \(report.confidenceLabel.fr.lowercased()).",
+                        "Verdict: \(verdict), \(report.score)/100, \(report.confidenceLabel.en.lowercased()) confidence.",
+                        "Veredicto: \(verdict), \(report.score)/100, confianza \(report.confidenceLabel.es.lowercased()).")]
+        lines += report.signals.prefix(10).map { signal in
+            "• \(signal.rule.title.localized) — \(signal.rule.explanation.localized)" + (signal.evidence.isEmpty ? "" : " (\(signal.evidence))")
+        }
+        lines += modelLines(report)
+        if message?.fromAddress != nil { lines += answer(.sender, report: report, message: message) }
+        if !report.links.isEmpty { lines += answer(.link, report: report, message: message) }
+        if let attachments = message?.attachments, !attachments.isEmpty { lines += answer(.file, report: report, message: message) }
+        lines.append(report.verdict.advice.localized)
+        var seen = Set<String>()
+        return lines.filter { seen.insert($0).inserted }
+    }
+
+    /// The answer to a question that was not understood, without a language model: what is
+    /// known, said plainly.
+    public static func fallback(report: Report, message: EmailMessage?) -> [String] {
+        [tr("Je ne suis pas sûr d’avoir compris la question. Voici tout ce que l’analyse a établi :",
+            "I am not sure I understood the question. Here is everything the analysis established:",
+            "No estoy seguro de haber entendido la pregunta. Esto es todo lo que el análisis ha establecido:")]
+            + facts(report: report, message: message)
     }
 
     /// What the trained models say, in words.
     static func modelLines(_ report: Report) -> [String] {
+        learnedLines(report) + statisticalLines(report)
+    }
+
+    /// What the user taught MailZen, and when the model decided by itself.
+    static func learnedLines(_ report: Report) -> [String] {
+        var lines: [String] = []
+        switch report.userVerdict {
+        case true?:
+            lines.append(tr("Vous avez vous-même signalé ce message comme une arnaque : je m’en souviens.",
+                            "You reported this message as a scam yourself: I remember it.",
+                            "Tú mismo denunciaste este mensaje como estafa: lo recuerdo."))
+        case false?:
+            lines.append(tr("Vous avez jugé ce message légitime : j’ai abaissé le score, sauf si un signal grave s’y oppose.",
+                            "You judged this message legitimate: I lowered the score, unless a serious signal forbids it.",
+                            "Juzgaste este mensaje legítimo: he bajado la puntuación, salvo que una señal grave lo impida."))
+        case nil:
+            if report.learnedLegit {
+                lines.append(tr("Il ressemble à des messages que vous avez jugés légitimes : j’ai abaissé le score.",
+                                "It resembles messages you judged legitimate: I lowered the score.",
+                                "Se parece a mensajes que juzgaste legítimos: he bajado la puntuación."))
+            } else if let shift = report.model?.personal, shift >= 1 {
+                lines.append(tr("Vos corrections m’ont appris à me méfier de ce type de message.",
+                                "Your corrections taught me to be wary of this kind of message.",
+                                "Tus correcciones me enseñaron a desconfiar de este tipo de mensaje."))
+            }
+        }
+        if report.decidedByModel, let m = report.model {
+            let pct = Int((m.probability * 100).rounded())
+            lines.append(tr("Les règles seules voyaient peu de signaux : c’est mon modèle entraîné, sûr à \(pct) %, qui a fixé ce verdict.",
+                            "The rules alone saw few signals: my trained model, \(pct)% sure, set this verdict.",
+                            "Las reglas solas veían pocas señales: mi modelo entrenado, seguro al \(pct) %, fijó este veredicto."))
+        }
+        return lines
+    }
+
+    static func statisticalLines(_ report: Report) -> [String] {
         guard let m = report.model else { return [] }
         let pct = Int((m.probability * 100).rounded())
         if m.probability >= 0.5 {
@@ -80,6 +160,8 @@ public enum ZenAI {
             signals.prefix(5).map { "• \($0.rule.title.localized) — \($0.rule.explanation.localized)" }
         }
         switch intent {
+        case .other:
+            return fallback(report: report, message: message)
         case .summary:
             return [
                 tr("Verdict : \(verdict), \(report.score)/100, confiance \(report.confidenceLabel.fr.lowercased()).",

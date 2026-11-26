@@ -47,3 +47,36 @@ MORE = {
            "es": ["cómo bloqueo al remitente", "quiero bloquear esta dirección", "debo borrar este correo", "cómo dejo de recibir estos mensajes", "cómo me doy de baja",
                   "lo borro o no", "cómo paro este spam", "marcar como no deseado", "bloquear este número", "no quiero recibir más esto"]},
 }
+
+# Questions outside the known topics: about details of the message, about vocabulary, or
+# about anything else. ZenAI answers them from every fact of the analysis (and, on iPhones
+# that have it, with Apple's on-device language model), or says it cannot know.
+MORE["other"] = {
+ "fr": ["à quelle heure ce message a-t-il été envoyé", "combien de liens y a-t-il dans ce message", "le montant demandé est-il normal", "que veut dire dmarc",
+        "c'est quoi un nom de domaine", "dans quelle langue est écrit ce mail", "y a-t-il des fautes d'orthographe", "est-ce que mon antivirus suffit",
+        "ce message vient de quel pays", "quelle est la capitale de la france", "raconte-moi une blague", "quel temps fait-il demain",
+        "c'est quoi le phishing", "explique-moi spf et dkim", "combien de pièces jointes contient-il", "que dois-je dire à ma grand-mère",
+        "est-ce que d'autres personnes ont reçu ce mail", "comment ont-ils eu mon adresse", "mon téléphone est-il infecté", "est-ce que mailzen lit mes mails",
+        "tu es une intelligence artificielle", "qui t'a créé", "combien coûte mailzen", "quelle heure est-il",
+        "traduis ce message", "résume-moi le contenu du message", "que demande exactement ce message", "quel est l'objet du mail",
+        "est-ce que ce numéro de téléphone est vrai", "c'est quoi un qr code", "pourquoi je reçois autant de spams", "est-ce légal d'envoyer ça",
+        "que risque l'arnaqueur", "ce message est-il écrit par une ia", "depuis quand ce site existe", "mon adresse a-t-elle fuité"],
+ "en": ["what time was this message sent", "how many links are in this message", "is the amount requested normal", "what does dmarc mean",
+        "what is a domain name", "what language is this email written in", "are there spelling mistakes", "is my antivirus enough",
+        "which country does this message come from", "what is the capital of france", "tell me a joke", "what's the weather tomorrow",
+        "what is phishing", "explain spf and dkim", "how many attachments does it have", "what should I tell my grandmother",
+        "did other people get this email", "how did they get my address", "is my phone infected", "does mailzen read my emails",
+        "are you an artificial intelligence", "who made you", "how much does mailzen cost", "what time is it",
+        "translate this message", "summarize the content of the message", "what exactly does this message ask for", "what is the subject of the email",
+        "is this phone number real", "what is a qr code", "why do I get so much spam", "is it legal to send this",
+        "what does the scammer risk", "was this message written by an ai", "how old is this website", "has my address been leaked"],
+ "es": ["a qué hora se envió este mensaje", "cuántos enlaces hay en este mensaje", "el importe que piden es normal", "qué significa dmarc",
+        "qué es un nombre de dominio", "en qué idioma está escrito este correo", "hay faltas de ortografía", "basta con mi antivirus",
+        "de qué país viene este mensaje", "cuál es la capital de francia", "cuéntame un chiste", "qué tiempo hará mañana",
+        "qué es el phishing", "explícame spf y dkim", "cuántos adjuntos tiene", "qué le digo a mi abuela",
+        "otras personas han recibido este correo", "cómo consiguieron mi dirección", "mi móvil está infectado", "mailzen lee mis correos",
+        "eres una inteligencia artificial", "quién te creó", "cuánto cuesta mailzen", "qué hora es",
+        "traduce este mensaje", "resúmeme el contenido del mensaje", "qué pide exactamente este mensaje", "cuál es el asunto del correo",
+        "este número de teléfono es real", "qué es un código qr", "por qué recibo tanto spam", "es legal enviar esto",
+        "a qué se arriesga el estafador", "este mensaje lo escribió una ia", "desde cuándo existe esta web", "se ha filtrado mi dirección"],
+}

@@ -95,7 +95,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
     case riskyFile, doubleExtension, macro, qrCode
     case typeMismatch, executable, scriptInDocument, autoAction, embeddedFile, officeMacros
     case externalContent, passwordForm, metaRefresh, archiveRisk, encryptedArchive, zipBomb, formulaInjection
-    case modelScam, modelLink, blockedSender
+    case modelScam, modelLink, blockedSender, userReported
 
     public var family: Family {
         switch self {
@@ -109,6 +109,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
              .externalContent, .passwordForm, .metaRefresh, .archiveRisk, .encryptedArchive, .zipBomb, .formulaInjection: .file
         case .modelScam, .modelLink: .model
         case .blockedSender: .sender
+        case .userReported: .model
         }
     }
 
@@ -152,6 +153,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .modelScam: 16
         case .modelLink: 14
         case .blockedSender: 45
+        case .userReported: 70
         }
     }
 
@@ -203,6 +205,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .modelScam: T3("Ressemble à des arnaques connues", "Looks like known scams", "Se parece a estafas conocidas")
         case .modelLink: T3("Lien proche de liens de phishing connus", "Link close to known phishing links", "Enlace parecido a enlaces de phishing conocidos")
         case .blockedSender: T3("Expéditeur que vous avez bloqué", "Sender you blocked", "Remitente que has bloqueado")
+        case .userReported: T3("Message que vous avez signalé", "Message you reported", "Mensaje que has denunciado")
         }
     }
 
@@ -247,6 +250,7 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .modelScam: T3("Le modèle entraîné de MailZen reconnaît dans ce texte les tournures de très nombreuses arnaques.", "MailZen’s trained model recognizes in this text the wording of many scams.", "El modelo entrenado de MailZen reconoce en este texto la redacción de muchas estafas.")
         case .modelLink: T3("Le modèle des liens, entraîné sur des centaines de milliers d’adresses, reconnaît la forme d’un lien de phishing.", "The link model, trained on hundreds of thousands of addresses, recognizes the shape of a phishing link.", "El modelo de enlaces, entrenado con cientos de miles de direcciones, reconoce la forma de un enlace de phishing.")
         case .blockedSender: T3("Vous avez déjà signalé cet expéditeur comme malveillant.", "You already reported this sender as malicious.", "Ya marcaste a este remitente como malicioso.")
+        case .userReported: T3("Vous avez vous-même indiqué que ce message était une arnaque.", "You said yourself that this message was a scam.", "Tú mismo indicaste que este mensaje era una estafa.")
         }
     }
 }
@@ -293,8 +297,8 @@ public struct PersonalLists: Sendable, Hashable, Codable {
 
 /// The result of an analysis.
 public struct Report: Hashable, Sendable {
-    public let score: Int
-    public let verdict: Verdict
+    public internal(set) var score: Int
+    public internal(set) var verdict: Verdict
     /// 0 (low) to 2 (high).
     public let confidence: Int
     public let signals: [Signal]
@@ -303,6 +307,12 @@ public struct Report: Hashable, Sendable {
     public var model: ModelInsight? = nil
     /// The sender is on the user's trusted list.
     public var trustedSender = false
+    /// The trained model raised the verdict by itself (autonomous mode).
+    public var decidedByModel = false
+    /// What the user said of this very message, if they judged it: a scam or not.
+    public var userVerdict: Bool? = nil
+    /// The score was lowered because the message resembles ones the user judged legitimate.
+    public var learnedLegit = false
 
     public var confidenceLabel: T3 {
         switch confidence {
@@ -316,11 +326,21 @@ public struct Report: Hashable, Sendable {
     /// the score is lowered, unless an attachment, an authentication failure or a lookalike
     /// shows that someone poses as that sender.
     func trusted() -> Report {
-        let hard: Set<Rule> = [.authFailure, .lookalike, .executable, .typeMismatch, .doubleExtension, .archiveRisk, .zipBomb, .passwordForm, .blockedSender]
-        guard !signals.contains(where: { hard.contains($0.rule) }) else { return self }
-        let lowered = min(score, 19)
-        var r = Report(score: lowered, verdict: .of(score: lowered), confidence: confidence, signals: signals, links: links, model: model)
+        guard var r = lowered(to: 19) else { return self }
         r.trustedSender = true
+        return r
+    }
+
+    /// Signs that someone poses as a sender, or that a file is dangerous: nothing the user
+    /// taught MailZen lowers a score that has one of them.
+    static let hard: Set<Rule> = [.authFailure, .lookalike, .executable, .typeMismatch, .doubleExtension, .archiveRisk, .zipBomb, .passwordForm, .blockedSender, .userReported]
+
+    func lowered(to ceiling: Int, alsoBlockedBy more: Set<Rule> = []) -> Report? {
+        guard !signals.contains(where: { Self.hard.contains($0.rule) || more.contains($0.rule) }) else { return nil }
+        var r = self
+        r.score = min(score, ceiling)
+        r.verdict = .of(score: r.score)
+        r.decidedByModel = decidedByModel && r.score == score
         return r
     }
 
@@ -509,7 +529,7 @@ public enum Engine {
 
     /// Analyzes a parsed email: its text, plus its authentication results and reply
     /// address.
-    public static func analyze(_ message: EmailMessage, personal lists: PersonalLists? = nil) -> Report {
+    public static func analyze(_ message: EmailMessage, personal lists: PersonalLists? = nil, learned: PersonalModel? = nil) -> Report {
         let personal = lists ?? Self.personal
         var extra: [Signal] = []
         if let failed = message.failedAuthentication {
@@ -530,7 +550,7 @@ public enum Engine {
         if personal.contains(personal.blocked, message.fromAddress) {
             extra.append(Signal(rule: .blockedSender, evidence: message.fromAddress ?? ""))
         }
-        var report = analyze(text: message.analysisText, extra: extra, personal: personal)
+        var report = analyze(text: message.analysisText, extra: extra, personal: personal, learned: learned)
         if personal.contains(personal.trusted, message.fromAddress) { report = report.trusted() }
         return report
     }
@@ -539,9 +559,18 @@ public enum Engine {
     nonisolated(unsafe) public static var useModels = true
     /// The senders the user trusts or blocked (set by the app).
     nonisolated(unsafe) public static var personal = PersonalLists()
+    /// What MailZen learned from the corrections of its user (set by the app).
+    nonisolated(unsafe) public static var learned = PersonalModel()
+    /// Whether the trained model may decide the verdict by itself when it is sure: at
+    /// least "suspicious" from 90 %, "danger" from 98 % (0.17 % and 0.06 % of false alarms
+    /// on real messages kept for the test). Otherwise it only adds a signal to the rules.
+    nonisolated(unsafe) public static var autonomous = true
+    static let suspiciousFrom = 0.9
+    static let dangerFrom = 0.98
 
-    static func analyze(text: String, extra: [Signal], models: Bool = true, personal lists: PersonalLists? = nil) -> Report {
+    static func analyze(text: String, extra: [Signal], models: Bool = true, personal lists: PersonalLists? = nil, learned taught: PersonalModel? = nil) -> Report {
         let personal = lists ?? Self.personal
+        let learned = taught ?? Self.learned
         let lower = text.lowercased()
         var signals: [Signal] = []
         func push(_ rule: Rule, _ evidence: String) {
@@ -550,6 +579,9 @@ public enum Engine {
             }
         }
         for signal in extra { push(signal.rule, signal.evidence) }
+        // What the user said of this very message.
+        let said = text.isEmpty ? nil : learned.verdict(of: text)
+        if said == true { push(.userReported, "") }
 
         // Sender.
         let senderLine = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { line in
@@ -639,8 +671,12 @@ public enum Engine {
         let words = lower.split(whereSeparator: \.isWhitespace).count
         // The trained models: a signal when they are very sure, and the family of scam.
         var insight: ModelInsight?
+        var floor = 0
         if useModels, models, words >= 5, let models = Models.shared {
-            let p = models.scamProbability(text)
+            let features = Featurizer.features(text)
+            // The scam model, plus what the user taught it on this device.
+            let personalShift = learned.adjustment(features)
+            let p = 1 / (1 + exp(-(models.scam.logits(features)[0] + personalShift)))
             var category: ScamCategory?
             var categoryProbability = 0.0
             if p >= 0.5 {
@@ -650,16 +686,21 @@ public enum Engine {
                     categoryProbability = c.probability
                 }
             }
-            insight = ModelInsight(probability: p, category: category, categoryProbability: categoryProbability)
+            insight = ModelInsight(probability: p, category: category, categoryProbability: categoryProbability, personal: personalShift)
             // A message whose links all lead to verified official domains is no
             // impersonation, however much its wording looks like one.
             let allOfficial = !links.isEmpty && links.allSatisfy { Brands.official($0.host) != nil }
-            if p >= 0.9 && !allOfficial { push(.modelScam, "\(Int((p * 100).rounded())) %") }
+            if p >= suspiciousFrom && !allOfficial {
+                push(.modelScam, "\(Int((p * 100).rounded())) %")
+                if autonomous { floor = p >= dangerFrom ? 70 : 45 }
+            }
         }
 
         let raw = signals.reduce(0) { $0 + $1.rule.weight }
         // Authority alone (a newsletter from a city hall) is no danger.
-        let score = (signals.count == 1 && signals[0].rule == .authority) ? 4 : min(raw, 98)
+        let ruled = (signals.count == 1 && signals[0].rule == .authority) ? 4 : min(raw, 98)
+        // The model decides by itself when it is sure and the rules saw less.
+        let score = max(ruled, floor)
         let confidence: Int
         switch (words, signals.count) {
         case (0...8, _): confidence = 0
@@ -667,6 +708,19 @@ public enum Engine {
         case (_, 2...3) where score < 70: confidence = 1
         default: confidence = 2
         }
-        return Report(score: score, verdict: .of(score: score), confidence: confidence, signals: signals, links: links, model: insight)
+        var report = Report(score: score, verdict: .of(score: score), confidence: confidence, signals: signals, links: links, model: insight)
+        report.decidedByModel = floor > ruled
+        report.userVerdict = said
+        if said == false, let lowered = report.lowered(to: 19) {
+            // The user judged this very message legitimate.
+            report = lowered
+        } else if said == nil, let m = insight, m.personal <= -1.5, m.probability < 0.2,
+                  let lowered = report.lowered(to: 30, alsoBlockedBy: [.modelLink, .brandMismatch, .shortLink, .ipLink, .riskyFile, .macro]),
+                  lowered.score < report.score {
+            // It resembles messages the user judged legitimate.
+            report = lowered
+            report.learnedLegit = true
+        }
+        return report
     }
 }

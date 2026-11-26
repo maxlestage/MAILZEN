@@ -19,10 +19,34 @@ struct ModelsView: View {
                     Label(tr("Utiliser les modèles entraînés", "Use the trained models", "Usar los modelos entrenados"), systemImage: "cpu")
                 }
                 .tint(Theme.cyan)
+                Toggle(isOn: Binding(get: { store.autonomous }, set: { store.setAutonomous($0) })) {
+                    Label(tr("Laisser le modèle décider seul", "Let the model decide by itself", "Dejar que el modelo decida solo"), systemImage: "bolt.shield")
+                }
+                .tint(Theme.cyan)
+                .disabled(!store.useModels)
             } footer: {
-                Text(tr("Les modèles tournent sur l’iPhone, sans connexion : rien de ce que vous analysez n’en sort. Désactivés, MailZen n’utilise que son moteur de règles.",
-                        "The models run on the iPhone, offline: nothing you analyze leaves it. Turned off, MailZen only uses its rules engine.",
-                        "Los modelos funcionan en el iPhone, sin conexión: nada de lo que analizas sale de él. Desactivados, MailZen solo usa su motor de reglas."))
+                Text(tr("Les modèles tournent sur l’iPhone, sans connexion : rien de ce que vous analysez n’en sort. Autonome, le modèle classe lui-même un message « Suspect » dès 90 % de certitude et « Danger élevé » dès 98 %, même si aucune règle ne s’est déclenchée. Sinon, il ajoute seulement un signal aux règles.",
+                        "The models run on the iPhone, offline: nothing you analyze leaves it. Autonomous, the model itself rates a message “Suspicious” from 90% certainty and “High danger” from 98%, even when no rule fired. Otherwise it only adds a signal to the rules.",
+                        "Los modelos funcionan en el iPhone, sin conexión: nada de lo que analizas sale de él. Autónomo, el modelo califica él mismo un mensaje como «Sospechoso» desde el 90 % de certeza y «Peligro elevado» desde el 98 %, aunque ninguna regla se active. Si no, solo añade una señal a las reglas."))
+            }
+
+            Section {
+                HStack {
+                    Label(tr("Corrections apprises", "Corrections learned", "Correcciones aprendidas"), systemImage: "graduationcap")
+                    Spacer()
+                    if store.learning {
+                        ProgressView()
+                    } else {
+                        Text("\(store.learned.examples)").foregroundStyle(Theme.muted)
+                    }
+                }
+                LabeledContent(tr("Poids ajustés pour vous", "Weights adjusted for you", "Pesos ajustados para ti"), value: store.learned.weights.count.formatted())
+            } header: {
+                Text(tr("Apprentissage sur l’appareil", "On-device learning", "Aprendizaje en el dispositivo"))
+            } footer: {
+                Text(tr("À chaque correction (« MailZen s’est trompé ? » en bas d’un rapport), le modèle se réentraîne tout seul sur l’iPhone, en une fraction de seconde : il retient le message et reconnaît ensuite ceux qui lui ressemblent. Aucun ordinateur, aucun serveur.",
+                        "At each correction (“Did MailZen get it wrong?” at the bottom of a report), the model retrains by itself on the iPhone, in a fraction of a second: it remembers the message and then recognizes those that resemble it. No computer, no server.",
+                        "Con cada corrección («¿MailZen se ha equivocado?» al final de un informe), el modelo se reentrena solo en el iPhone, en una fracción de segundo: recuerda el mensaje y luego reconoce los que se le parecen. Sin ordenador ni servidor."))
             }
 
             if let m = manifest {
@@ -40,9 +64,9 @@ struct ModelsView: View {
                                 "\(m.category.families) families, \(pct(m.category.accuracy, digits: 0)) right on messages of an unseen kind. Shown only when the model is sure enough.",
                                 "\(m.category.families) familias, \(pct(m.category.accuracy, digits: 0)) de aciertos en mensajes de un tipo nunca visto. Solo se muestra cuando el modelo está bastante seguro."))
                     modelRow("bubble.left.and.text.bubble.right", tr("Questions à ZenAI", "Questions to ZenAI", "Preguntas a ZenAI"),
-                             tr("\(m.intent.intents) sujets compris, \(pct(m.intent.accuracy, digits: 0)) de bonnes réponses sur des formulations jamais vues ; des mots-clés prennent le relais quand il hésite.",
-                                "\(m.intent.intents) topics understood, \(pct(m.intent.accuracy, digits: 0)) right on unseen phrasings; keywords take over when it hesitates.",
-                                "\(m.intent.intents) temas entendidos, \(pct(m.intent.accuracy, digits: 0)) de aciertos en formulaciones nunca vistas; palabras clave toman el relevo cuando duda."))
+                             tr("\(m.intent.intents) sujets reconnus, le bon dans \(pct(m.intent.accuracy, digits: 0)) des cas sur des formulations jamais vues. Pour toute autre question, ZenAI répond à partir de tous les faits de l’analyse.",
+                                "\(m.intent.intents) topics recognized, the right one \(pct(m.intent.accuracy, digits: 0)) of the time on unseen phrasings. For any other question, ZenAI answers from every fact of the analysis.",
+                                "\(m.intent.intents) temas reconocidos, el correcto en el \(pct(m.intent.accuracy, digits: 0)) de los casos con formulaciones nunca vistas. Para cualquier otra pregunta, ZenAI responde a partir de todos los hechos del análisis."))
                     modelRow("sparkles", "Apple Intelligence",
                              OnDeviceModel.isAvailable
                              ? tr("Disponible : ZenAI reformule ses réponses à partir des seuls faits de l’analyse, jamais du contenu de l’email.",
@@ -99,9 +123,9 @@ struct ModelsView: View {
             } header: {
                 Text(tr("Vos corrections", "Your corrections", "Tus correcciones"))
             } footer: {
-                Text(tr("Quand MailZen se trompe, dites-le en bas du rapport. Les corrections restent sur l’iPhone ; exportées, elles contiennent le texte des messages : ne les partagez qu’avec une personne de confiance, qui les passe à ml/train.py --feedback.",
-                        "When MailZen is wrong, say so at the bottom of the report. Corrections stay on the iPhone; exported, they contain the text of the messages: share them only with someone you trust, who gives them to ml/train.py --feedback.",
-                        "Cuando MailZen se equivoque, dilo al final del informe. Las correcciones se quedan en el iPhone; exportadas, contienen el texto de los mensajes: compártelas solo con alguien de confianza, que las pasa a ml/train.py --feedback."))
+                Text(tr("Les corrections restent sur l’iPhone et le modèle les apprend tout seul. L’export est facultatif : il sert à améliorer le modèle de base pour tout le monde (ml/train.py --feedback). Il contient le texte des messages : ne le partagez qu’avec une personne de confiance.",
+                        "Corrections stay on the iPhone and the model learns them by itself. Exporting is optional: it improves the base model for everyone (ml/train.py --feedback). It contains the text of the messages: share it only with someone you trust.",
+                        "Las correcciones se quedan en el iPhone y el modelo las aprende solo. Exportar es opcional: sirve para mejorar el modelo base para todos (ml/train.py --feedback). Contiene el texto de los mensajes: compártelo solo con alguien de confianza."))
             }
         }
         .scrollContentBackground(.hidden)

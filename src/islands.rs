@@ -307,6 +307,17 @@ fn report_view(lang: Lang, r: &Report) -> Element {
                 .child(icon("radar"))
                 .child(span().text(line)),
         );
+        if r.decided_by_model {
+            card = card.child(
+                p().class("report__model report__model--decided")
+                    .child(icon("spark"))
+                    .child(span().text(t(&[
+                        "Verdict fixé par le modèle entraîné : les règles seules voyaient moins de signaux.",
+                        "Verdict set by the trained model: the rules alone saw fewer signals.",
+                        "Veredicto fijado por el modelo entrenado: las reglas solas veían menos señales.",
+                    ]))),
+            );
+        }
     }
     if !technical.is_empty() {
         card = card.child(h4().text(t(&[
