@@ -126,6 +126,23 @@ struct ReportView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Theme.safe)
             }
+            if report.userVerdict == true {
+                Label(tr("Vous avez signalé ce message", "You reported this message", "Denunciaste este mensaje"), systemImage: "hand.raised.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.danger)
+            } else if report.userVerdict == false {
+                Label(tr("Vous avez jugé ce message légitime", "You judged this message legitimate", "Juzgaste legítimo este mensaje"), systemImage: "hand.thumbsup.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.safe)
+            } else if report.learnedLegit {
+                Label(tr("Ressemble à des messages que vous avez jugés légitimes", "Resembles messages you judged legitimate", "Se parece a mensajes que juzgaste legítimos"), systemImage: "graduationcap.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.safe).multilineTextAlignment(.center)
+            } else if let shift = report.model?.personal, shift >= 1 {
+                Label(tr("Appris de vos corrections", "Learned from your corrections", "Aprendido de tus correcciones"), systemImage: "graduationcap.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.cyanLight)
+            }
+            if report.decidedByModel {
+                Label(tr("Verdict fixé par le modèle entraîné", "Verdict set by the trained model", "Veredicto fijado por el modelo entrenado"), systemImage: "cpu.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(report.verdict.color)
+            }
             if let model = report.model {
                 HStack(spacing: 8) {
                     Image(systemName: "cpu").foregroundStyle(Theme.cyanLight)

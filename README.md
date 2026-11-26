@@ -91,6 +91,7 @@ Dans [`apps/ios/`](apps/ios) :
 | **App** | accueil avec radar animé, scanner (texte, fichier ou pièce jointe, capture lue par OCR, QR code en direct, lien), rapport, ZenAI, Safe Reply, historique local, Apprendre, Brand Check, SOS Cyber, réglages |
 | **Veille** | connexion à une boîte iCloud, Gmail, Yahoo ou IMAP (mot de passe pour app, dans le trousseau), vérification en arrière-plan et notification si un email dangereux arrive |
 | **Extension** | « Partager → MailZen » depuis Mail, Safari, Photos ou Fichiers |
+| **Modèles** | quatre modèles entraînés ([`ml/`](ml), [fiche](ml/MODEL_CARD.md)) qui tournent sur l’iPhone : arnaques, familles d’arnaques, liens de phishing, questions à ZenAI. Autonomes : le modèle décide seul quand il est sûr, et il **apprend de vos corrections sur l’appareil**, sans serveur. La démo du site utilise les mêmes, en Rust/WebAssembly |
 
 Le projet Xcode est généré par [XcodeGen](apps/ios/project.yml) : la CI compile l’app sur un Mac de
 GitHub à chaque push. Pour l’installer sur un iPhone via TestFlight, sans ordinateur : voir

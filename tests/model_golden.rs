@@ -19,24 +19,24 @@ fn close(a: f64, b: f64) -> bool {
 fn the_text_models_match_the_training() {
     let scam = load("scam");
     let category = load("category");
-    assert!(close(scam.probabilities(&text_features("Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis"))[0], 0.999729), "Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis");
+    assert!(close(scam.probabilities(&text_features("Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis"))[0], 0.999709), "Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis");
     let c = category.best(&text_features("Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis"));
-    assert!(c.0 == "delivery" && close(c.1, 0.972102), "Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis");
-    assert!(close(scam.probabilities(&text_features("Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30."))[0], 0.000845), "Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30.");
+    assert!(c.0 == "delivery" && close(c.1, 0.978498), "Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis");
+    assert!(close(scam.probabilities(&text_features("Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30."))[0], 0.000767), "Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30.");
     let c = category.best(&text_features("Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30."));
-    assert!(c.0 == "tech_support" && close(c.1, 0.338215), "Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30.");
-    assert!(close(scam.probabilities(&text_features("Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login"))[0], 0.999877), "Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login");
+    assert!(c.0 == "tech_support" && close(c.1, 0.342667), "Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30.");
+    assert!(close(scam.probabilities(&text_features("Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login"))[0], 0.999897), "Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login");
     let c = category.best(&text_features("Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login"));
-    assert!(c.0 == "account" && close(c.1, 0.865060), "Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login");
-    assert!(close(scam.probabilities(&text_features("Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago"))[0], 0.998950), "Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago");
+    assert!(c.0 == "account" && close(c.1, 0.875623), "Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login");
+    assert!(close(scam.probabilities(&text_features("Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago"))[0], 0.999050), "Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago");
     let c = category.best(&text_features("Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago"));
-    assert!(c.0 == "delivery" && close(c.1, 0.996211), "Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago");
-    assert!(close(scam.probabilities(&text_features("J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures."))[0], 0.999898), "J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures.");
+    assert!(c.0 == "delivery" && close(c.1, 0.996480), "Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago");
+    assert!(close(scam.probabilities(&text_features("J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures."))[0], 0.999908), "J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures.");
     let c = category.best(&text_features("J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures."));
-    assert!(c.0 == "blackmail" && close(c.1, 0.997145), "J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures.");
-    assert!(close(scam.probabilities(&text_features("ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin."))[0], 0.272395), "ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin.");
+    assert!(c.0 == "blackmail" && close(c.1, 0.997381), "J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures.");
+    assert!(close(scam.probabilities(&text_features("ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin."))[0], 0.234710), "ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin.");
     let c = category.best(&text_features("ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin."));
-    assert!(c.0 == "business" && close(c.1, 0.640738), "ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin.");
+    assert!(c.0 == "business" && close(c.1, 0.647173), "ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin.");
     assert!(close(scam.probabilities(&text_features(""))[0], 0.046494), "");
     let c = category.best(&text_features(""));
     assert!(c.0 == "romance" && close(c.1, 0.462628), "");
@@ -46,14 +46,14 @@ fn the_text_models_match_the_training() {
 #[rustfmt::skip]
 fn the_link_model_matches_the_training() {
     let url = load("url");
-    assert!(close(url.probabilities(&url_features("https://www.paypal.com/fr/signin"))[0], 0.136983), "https://www.paypal.com/fr/signin");
-    assert!(close(url.probabilities(&url_features("http://paypaI-secure.xyz/login.php?id=4&amp;x=1"))[0], 0.999986), "http://paypaI-secure.xyz/login.php?id=4&amp;x=1");
-    assert!(close(url.probabilities(&url_features("user@185.23.4.9:8080/a"))[0], 0.999431), "user@185.23.4.9:8080/a");
-    assert!(close(url.probabilities(&url_features("HTTPS://Colissimo-Suivi.top/Paiement/"))[0], 0.999622), "HTTPS://Colissimo-Suivi.top/Paiement/");
-    assert!(close(url.probabilities(&url_features("www.impots.gouv.fr/accueil#top"))[0], 0.010780), "www.impots.gouv.fr/accueil#top");
-    assert!(close(url.probabilities(&url_features("https://bit.ly/3xYz9"))[0], 0.998986), "https://bit.ly/3xYz9");
-    assert!(close(url.probabilities(&url_features("https://exämple.fr/ça"))[0], 0.724564), "https://exämple.fr/ça");
-    assert!(close(url.probabilities(&url_features("https://sub.domain.example.co.uk/path/to/file.html?q=1"))[0], 0.572066), "https://sub.domain.example.co.uk/path/to/file.html?q=1");
+    assert!(close(url.probabilities(&url_features("https://www.paypal.com/fr/signin"))[0], 0.106028), "https://www.paypal.com/fr/signin");
+    assert!(close(url.probabilities(&url_features("http://paypaI-secure.xyz/login.php?id=4&amp;x=1"))[0], 0.999985), "http://paypaI-secure.xyz/login.php?id=4&amp;x=1");
+    assert!(close(url.probabilities(&url_features("user@185.23.4.9:8080/a"))[0], 0.999486), "user@185.23.4.9:8080/a");
+    assert!(close(url.probabilities(&url_features("HTTPS://Colissimo-Suivi.top/Paiement/"))[0], 0.999696), "HTTPS://Colissimo-Suivi.top/Paiement/");
+    assert!(close(url.probabilities(&url_features("www.impots.gouv.fr/accueil#top"))[0], 0.012796), "www.impots.gouv.fr/accueil#top");
+    assert!(close(url.probabilities(&url_features("https://bit.ly/3xYz9"))[0], 0.999245), "https://bit.ly/3xYz9");
+    assert!(close(url.probabilities(&url_features("https://exämple.fr/ça"))[0], 0.528951), "https://exämple.fr/ça");
+    assert!(close(url.probabilities(&url_features("https://sub.domain.example.co.uk/path/to/file.html?q=1"))[0], 0.530591), "https://sub.domain.example.co.uk/path/to/file.html?q=1");
     assert!(close(url.probabilities(&url_features(""))[0], 0.990642), "");
     assert!(close(url.probabilities(&url_features("https://"))[0], 0.990642), "https://");
 }

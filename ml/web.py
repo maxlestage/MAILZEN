@@ -1,6 +1,7 @@
-"""The models of the website demo: the app's models (Resources/*.mzm) pruned to their
-strongest weights, so that the browser downloads little, written into public/assets/models,
-with the golden tests that check the Rust code (src/models.rs) computes the same thing.
+"""The models of the website demo: the very models of the app (Resources/*.mzm), whole,
+copied into public/assets/models, with the golden tests that check the Rust code
+(src/models.rs) computes the same thing. (`KEEP` can prune a model to its strongest weights;
+the site ships them complete.)
 
     python3 web.py --data <folder of fetch.sh>     (train.py runs it at the end)
 """
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "apps/ios/MailZenKit/Sources/MailZenKit/Resources"
 WEB = ROOT / "public/assets/models"
 TESTS = ROOT / "tests/model_golden.rs"
-KEEP = {"scam": 40000, "category": 6000, "url": 50000}
+KEEP = {"scam": None, "category": None, "url": None}
 
 
 class Mzm:
@@ -40,6 +41,8 @@ class Mzm:
         self.pos = {int(j): i for i, j in enumerate(self.idx)}
 
     def prune(self, keep):
+        if keep is None or keep >= len(self.idx):
+            return self
         strength = np.abs(self.w.astype(np.int32)).max(axis=1)
         order = np.sort(np.argsort(-strength, kind="stable")[:keep])
         self.idx, self.w = self.idx[order], self.w[order]
@@ -98,15 +101,16 @@ def export(data, sample=3000):
         size = lite.write(WEB / f"{name}.mzm")
         models[name] = lite
         entry = {"weights": len(lite.idx), "kilobytes": size // 1024}
-        if name == "scam":
+        pruned = len(lite.idx) < len(full.idx)
+        if name == "scam" and pruned:
             for th in (0.5, 0.9):
                 entry[f"app@{th}"] = metrics([y for _, y, _ in sub], [full.scores(t)[0] for t, _, _ in sub], th)
                 entry[f"web@{th}"] = metrics([y for _, y, _ in sub], [lite.scores(t)[0] for t, _, _ in sub], th)
-        if name == "url":
+        if name == "url" and pruned:
             for th in (0.5, 0.95):
                 entry[f"app@{th}"] = metrics([y for _, y in usub], [full.scores(u)[0] for u, _ in usub], th)
                 entry[f"web@{th}"] = metrics([y for _, y in usub], [lite.scores(u)[0] for u, _ in usub], th)
-        if name == "category":
+        if name == "category" and pruned:
             rows = [r for r in corpus.generate(per_template=3) if r[1] == 1]
             same = sum(int(np.argmax(full.scores(r[4]))) == int(np.argmax(lite.scores(r[4]))) for r in rows)
             entry["agreement with the app"] = same / len(rows)
@@ -127,18 +131,18 @@ def card(report):
     section = f"""{start}
 ## Les modèles du site
 
-La démo du site utilise les modèles de l'app réduits à leurs poids les plus forts ([`web.py`](web.py)),
-téléchargés par le navigateur seulement quand un visiteur lance une analyse, et exécutés en Rust
-compilé en WebAssembly (`src/models.rs`, vérifié par `tests/model_golden.rs`).
+La démo du site utilise **les mêmes modèles que l'app, entiers** ([`web.py`](web.py)) : le
+navigateur les télécharge quand un visiteur lance une analyse et les exécute en Rust compilé en
+WebAssembly (`src/models.rs`, vérifié par `tests/model_golden.rs`). Mêmes seuils, même autonomie.
 
-| Modèle | Poids gardés | Taille | App | Site |
-|---|---|---|---|---|
-| `scam` (seuil 0,9) | {s['weights']} | {s['kilobytes']} Ko | rappel {s['app@0.9']['recall']:.3f}, faux positifs {s['app@0.9']['false_positive_rate']:.4f} | rappel {s['web@0.9']['recall']:.3f}, faux positifs {s['web@0.9']['false_positive_rate']:.4f} |
-| `url` (seuil 0,95) | {u['weights']} | {u['kilobytes']} Ko | rappel {u['app@0.95']['recall']:.3f}, faux positifs {u['app@0.95']['false_positive_rate']:.4f} | rappel {u['web@0.95']['recall']:.3f}, faux positifs {u['web@0.95']['false_positive_rate']:.4f} |
-| `category` | {report['category']['weights']} | {report['category']['kilobytes']} Ko | — | même famille que l'app pour {report['category']['agreement with the app']:.1%} des messages générés |
+| Modèle | Poids | Taille |
+|---|---|---|
+| `scam` | {s['weights']} | {s['kilobytes']} Ko |
+| `url` | {u['weights']} | {u['kilobytes']} Ko |
+| `category` | {report['category']['weights']} | {report['category']['kilobytes']} Ko |
 {end}
 """
-    text = text.replace("## Limites", section + "\n## Limites", 1)
+    text = text.replace("## Apprentissage sur l'appareil", section + "\n## Apprentissage sur l'appareil", 1)
     path.write_text(text)
 
 

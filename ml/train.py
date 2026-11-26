@@ -95,6 +95,15 @@ class Quantized:
         return len(keep), path.stat().st_size
 
 
+def write_anchors():
+    """Reference messages shipped with the app: when the app learns from the user's
+    corrections on the device (PersonalModel), it must keep answering the same on these."""
+    rows = corpus.generate(seed=3, per_template=1)
+    texts = [r[4] for r in rows]
+    (OUT / "anchors.json").write_text(json.dumps(texts, ensure_ascii=False, separators=(",", ":")))
+    return len(texts)
+
+
 def binary_metrics(y, p, threshold=0.5):
     y = np.array(y); p = np.array(p); pred = p >= threshold
     tp = int(((pred == 1) & (y == 1)).sum()); fp = int(((pred == 1) & (y == 0)).sum())
@@ -168,7 +177,7 @@ def main():
         metrics["scam"][f"generated, unseen templates ({lang})"] = binary_metrics([r[1] for r in rows], evaluate(qscam, [r[4] for r in rows]))
     operating = {}
     operating["real (held out)"] = binary_metrics([y for _, y, _ in real_test], evaluate(qscam, [t for t, _, _ in real_test]), 0.9)
-    metrics["scam_075"] = binary_metrics([y for _, y, _ in real_test], evaluate(qscam, [t for t, _, _ in real_test]), 0.75)
+    metrics["scam_danger"] = binary_metrics([y for _, y, _ in real_test], evaluate(qscam, [t for t, _, _ in real_test]), 0.98)
     for lang in ("fr", "en", "es"):
         rows = [r for r in synth_test if r[3] == lang]
         operating[f"generated ({lang})"] = binary_metrics([r[1] for r in rows], evaluate(qscam, [r[4] for r in rows]), 0.9)
@@ -203,13 +212,22 @@ def main():
     irows = intents.generate()
     iX = matrix([r[3] for r in irows]); iy = np.array([names.index(r[1]) for r in irows])
     ifold = np.array([int(r[0].rsplit("/", 1)[1]) % 4 for r in irows])
-    iaccs = []
+    # ZenAI takes a topic as understood when the model gives it 45 % or more and it is not
+    # "other" (a question outside the known topics); otherwise it answers from every fact.
+    other = names.index("other")
+    iaccs, understood, right, caught = [], [], [], []
     for k in range(4):
         m = LogisticRegression(C=32.0, max_iter=3000).fit(iX[ifold != k], iy[ifold != k])
-        iaccs.append(float((m.predict(iX[ifold == k]) == iy[ifold == k]).mean()))
+        P = m.predict_proba(iX[ifold == k]); pred = P.argmax(axis=1); truth = iy[ifold == k]
+        iaccs.append(float((pred == truth).mean()))
+        und = (P.max(axis=1) >= 0.45) & (pred != other)
+        understood += list(und[truth != other]); right += list((pred == truth)[(truth != other) & und])
+        caught += list(~und[truth == other])
     im = LogisticRegression(C=32.0, max_iter=3000).fit(iX, iy)
     qint = Quantized(names, im.coef_, im.intercept_)
-    metrics["intent"] = {"accuracy, unseen phrasings": float(np.mean(iaccs)), "n": len(irows), "intents": len(names)}
+    metrics["intent"] = {"accuracy, unseen phrasings": float(np.mean(iaccs)), "n": len(irows), "intents": len(names) - 1,
+                         "understood": float(np.mean(understood)), "right when understood": float(np.mean(right)),
+                         "other questions recognized": float(np.mean(caught))}
     print(json.dumps({k: v for k, v in metrics.items() if k != "scam"}, indent=1))
 
     # ----- Link model -----
@@ -283,6 +301,9 @@ def main():
               "    }", "}", ""]
     TESTS.write_text("\n".join(lines))
 
+    anchors = write_anchors()
+    print("anchors", anchors)
+
     # ----- Manifest, read by the app (Settings, Trained models) -----
     import datetime
     manifest = {
@@ -293,7 +314,7 @@ def main():
                  "recall09": metrics["scam_operating"]["real (held out)"]["recall"],
                  "messages": len(real) + len(synth), "weights": sizes["scam"][0]},
         "category": {"accuracy": metrics["category"]["accuracy, unseen templates"], "families": len(cats), "weights": sizes["category"][0]},
-        "intent": {"accuracy": metrics["intent"]["accuracy, unseen phrasings"], "intents": len(names), "weights": sizes["intent"][0]},
+        "intent": {"accuracy": metrics["intent"]["right when understood"], "intents": len(names) - 1, "weights": sizes["intent"][0]},
         "url": {"auc": metrics["url"]["real, unseen domains, threshold 0.5"]["roc_auc"],
                 "falsePositives095": metrics["url"]["real, unseen domains, threshold 0.95"]["false_positive_rate"],
                 "recall095": metrics["url"]["real, unseen domains, threshold 0.95"]["recall"],
@@ -319,7 +340,7 @@ Quatre modèles linéaires (régression logistique), entraînés par [`train.py`
 |---|---|---|---|---|
 | `scam` | probabilité qu'un message soit une arnaque, un phishing ou un spam | 1 (logistique) | {sizes['scam'][0]} | {kb('scam')} Ko |
 | `category` | famille d'arnaque | {len(cats)} | {sizes['category'][0]} | {kb('category')} Ko |
-| `intent` | question posée à ZenAI | {len(names)} | {sizes['intent'][0]} | {kb('intent')} Ko |
+| `intent` | question posée à ZenAI | {len(names)} ({len(names) - 1} sujets et « autre question ») | {sizes['intent'][0]} | {kb('intent')} Ko |
 | `url` | probabilité qu'un lien mène à du phishing | 1 (logistique) | {sizes['url'][0]} | {kb('url')} Ko |
 
 ## Caractéristiques
@@ -357,9 +378,14 @@ Seuil 0,5. Données réelles : {len(real)} messages après dédoublonnage, 15 % 
 
 {table(metrics['scam'])}
 
-Au seuil de **0,9**, celui où l'app ajoute le signal « ressemble à des arnaques connues » :
+Au seuil de **0,9**, celui où l'app ajoute le signal « ressemble à des arnaques connues » et où,
+en mode autonome, le modèle classe seul le message « Suspect » :
 
 {table(metrics['scam_operating'])}
+
+Au seuil de **0,98**, celui où, en mode autonome, le modèle classe seul le message « Danger élevé » :
+
+{table({"real (held out)": metrics['scam_danger']})}
 
 ### `category`
 
@@ -370,9 +396,17 @@ traductions restent ensemble) : exactitude **{metrics['category']['accuracy, uns
 
 ### `intent`
 
-Validation croisée en 4 parts sur des formulations jamais vues ({len(names)} intentions) :
-exactitude **{metrics['intent']['accuracy, unseen phrasings']:.3f}**. Quand le modèle hésite (moins de 45 %), ZenAI
-se rabat sur des mots-clés.
+Validation croisée en 4 parts sur des formulations jamais vues ({len(names) - 1} sujets et la classe
+« autre question »). ZenAI tient un sujet pour compris quand le modèle lui donne au moins 45 % et
+que ce n'est pas « autre question » :
+
+- questions des sujets connus tenues pour comprises : **{metrics['intent']['understood']:.3f}** ;
+- bon sujet quand la question est tenue pour comprise : **{metrics['intent']['right when understood']:.3f}** ;
+- questions hors des sujets connus reconnues comme telles : **{metrics['intent']['other questions recognized']:.3f}** ;
+- exactitude brute sur les {len(names)} classes : {metrics['intent']['accuracy, unseen phrasings']:.3f}.
+
+Quand la question n'est pas comprise, ZenAI essaie des mots-clés, puis répond à partir de tous
+les faits de l'analyse (reformulés par Apple Intelligence quand l'iPhone l'a).
 
 ### `url`
 
@@ -381,17 +415,29 @@ générés. L'app n'utilise ce modèle qu'au seuil de **0,95**, et jamais pour u
 
 {table(metrics['url'])}
 
-## Limites
+## Apprentissage sur l'appareil
 
-- Un modèle statistique se trompe : il ne décide jamais seul. Le verdict de MailZen reste celui du
-  moteur de règles ; les modèles ajoutent des signaux (« ressemble à des arnaques connues »,
-  « lien proche de liens de phishing connus ») et la famille d'arnaque, que ZenAI explique avec
-  son niveau de confiance.
+Chaque correction de l'utilisateur (« MailZen s'est trompé ? ») réentraîne sur l'iPhone, en Swift
+(`PersonalModel.swift`), une couche personnelle ajoutée au modèle `scam` : une régression
+logistique sur les seules caractéristiques des messages corrigés, retenue par {anchors} messages de
+référence (`anchors.json`) dont les réponses ne doivent pas bouger. Le message corrigé est
+mémorisé tel quel ; ceux qui lui ressemblent changent de score. Rien ne quitte l'appareil.
+
+## Autonomie et limites
+
+- En mode autonome (par défaut), le modèle `scam` décide seul quand il est sûr : au moins
+  « Suspect » dès 0,9 et « Danger élevé » dès 0,98, même si aucune règle ne s'est déclenchée
+  (faux positifs mesurés ci-dessus). En dessous, il n'ajoute rien : les règles décident.
+- Il ne se prononce jamais contre un message dont tous les liens mènent à des domaines officiels
+  vérifiés, et ce que l'utilisateur a appris à MailZen n'abaisse jamais un score en présence
+  d'une usurpation ou d'une pièce jointe dangereuse.
+- Un modèle statistique se trompe : les mesures de cette fiche disent à quelle fréquence. Les
+  données réelles sont en anglais ; le français et l'espagnol reposent sur le corpus généré.
 - Le modèle des liens ne voit que l'adresse : ni la page, ni sa réputation en temps réel. Les
   petits sites inconnus et les liens de suivi des newsletters sont ses faux positifs les plus
-  fréquents.
-- Les arnaques évoluent : les modèles doivent être réentraînés régulièrement, avec les
-  corrections exportées depuis l'app.
+  fréquents ; il ne signale donc qu'à partir de 0,95.
+- Les arnaques évoluent : l'apprentissage sur l'appareil suit l'utilisateur ; le modèle de base
+  doit être réentraîné régulièrement (`--feedback`).
 """
     CARD.write_text(card)
     print("written", OUT, TESTS, CARD)

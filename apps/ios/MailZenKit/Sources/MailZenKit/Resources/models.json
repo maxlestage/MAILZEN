@@ -14,9 +14,9 @@
   "weights": 13193
  },
  "intent": {
-  "accuracy": 0.6629256079881592,
+  "accuracy": 0.7771497779572063,
   "intents": 13,
-  "weights": 7177
+  "weights": 8324
  },
  "url": {
   "auc": 0.9870001650390456,

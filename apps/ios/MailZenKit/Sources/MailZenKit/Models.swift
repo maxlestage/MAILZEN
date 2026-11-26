@@ -244,6 +244,21 @@ public struct LinearModel: Sendable {
         return (0..<k).map { bias[$0] + scale * Double(sums[$0]) * norm }
     }
 
+    /// The share of these features the model has weights for: low for words it never saw.
+    public func coverage(_ features: [UInt32]) -> Double {
+        guard !features.isEmpty else { return 0 }
+        var known = 0
+        for f in features {
+            var lo = 0, hi = indices.count - 1
+            while lo <= hi {
+                let mid = (lo + hi) / 2
+                if indices[mid] == f { known += 1; break }
+                if indices[mid] < f { lo = mid + 1 } else { hi = mid - 1 }
+            }
+        }
+        return Double(known) / Double(features.count)
+    }
+
     /// The probabilities: one (logistic) for a binary model, a distribution otherwise.
     public func probabilities(_ text: String) -> [Double] {
         probabilities(features: Featurizer.features(text))
@@ -370,4 +385,7 @@ public struct ModelInsight: Hashable, Sendable {
     /// The family it looks like, when the models think it is a scam.
     public let category: ScamCategory?
     public let categoryProbability: Double
+    /// What the user's corrections added to the model's score (in logits; 0 when nothing
+    /// was learned that concerns this message).
+    public var personal: Double = 0
 }

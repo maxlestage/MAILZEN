@@ -1891,9 +1891,9 @@ fn models_block(ctx: &Ctx<'_>) -> Element {
         .class("goals models")
         .attr("data-reveal", "")
         .child(p().class("goals__title").text(t(&[
-            "Des modèles entraînés, qui tournent sur l’appareil",
-            "Trained models that run on the device",
-            "Modelos entrenados que funcionan en el dispositivo",
+            "Des modèles autonomes, qui tournent et apprennent sur l’appareil",
+            "Autonomous models that run and learn on the device",
+            "Modelos autónomos que funcionan y aprenden en el dispositivo",
         ])))
         .child(div().class("stats").children(stats.iter().enumerate().map(
             |(i, (n, suffix, label))| {
@@ -1911,9 +1911,9 @@ fn models_block(ctx: &Ctx<'_>) -> Element {
             },
         )))
         .child(p().class("models__note").text(t(&[
-            "Quatre modèles, entraînés sur des dizaines de milliers d’arnaques et de messages légitimes en français, anglais et espagnol, reconnaissent les tournures d’arnaque, la famille d’arnaque, les liens de phishing et les questions posées à ZenAI. Ils ne décident jamais seuls : ils ajoutent des signaux au moteur de règles. Ils tournent sur l’iPhone, et dans la démo ci-dessus, dans votre navigateur.",
-            "Four models, trained on tens of thousands of scams and legitimate messages in French, English and Spanish, recognize scam wording, the family of scam, phishing links and the questions asked to ZenAI. They never decide alone: they add signals to the rules engine. They run on the iPhone, and in the demo above, in your browser.",
-            "Cuatro modelos, entrenados con decenas de miles de estafas y mensajes legítimos en francés, inglés y español, reconocen la redacción de las estafas, la familia de estafa, los enlaces de phishing y las preguntas a ZenAI. Nunca deciden solos: añaden señales al motor de reglas. Funcionan en el iPhone y, en la demo de arriba, en tu navegador.",
+            "Quatre modèles, entraînés sur des dizaines de milliers d’arnaques et de messages légitimes en français, anglais et espagnol, reconnaissent les tournures d’arnaque, la famille d’arnaque, les liens de phishing et les questions posées à ZenAI. Autonome, le modèle décide seul quand il est sûr : « Suspect » dès 90 % de certitude, « Danger élevé » dès 98 %. Et il apprend de vos corrections, directement sur l’iPhone, sans serveur. La démo ci-dessus utilise les mêmes modèles, entiers, dans votre navigateur.",
+            "Four models, trained on tens of thousands of scams and legitimate messages in French, English and Spanish, recognize scam wording, the family of scam, phishing links and the questions asked to ZenAI. Autonomous, the model decides by itself when it is sure: “Suspicious” from 90% certainty, “High danger” from 98%. And it learns from your corrections, right on the iPhone, with no server. The demo above uses the same models, whole, in your browser.",
+            "Cuatro modelos, entrenados con decenas de miles de estafas y mensajes legítimos en francés, inglés y español, reconocen la redacción de las estafas, la familia de estafa, los enlaces de phishing y las preguntas a ZenAI. Autónomo, el modelo decide solo cuando está seguro: «Sospechoso» desde el 90 % de certeza, «Peligro elevado» desde el 98 %. Y aprende de tus correcciones, directamente en el iPhone, sin servidor. La demo de arriba usa los mismos modelos, enteros, en tu navegador.",
         ])))
 }
 

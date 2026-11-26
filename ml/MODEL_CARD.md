@@ -8,7 +8,7 @@ Quatre modèles linéaires (régression logistique), entraînés par [`train.py`
 |---|---|---|---|---|
 | `scam` | probabilité qu'un message soit une arnaque, un phishing ou un spam | 1 (logistique) | 162685 | 794 Ko |
 | `category` | famille d'arnaque | 10 | 13193 | 180 Ko |
-| `intent` | question posée à ZenAI | 13 | 7177 | 119 Ko |
+| `intent` | question posée à ZenAI | 14 (13 sujets et « autre question ») | 8324 | 146 Ko |
 | `url` | probabilité qu'un lien mène à du phishing | 1 (logistique) | 238101 | 1162 Ko |
 
 ## Caractéristiques
@@ -51,7 +51,8 @@ Seuil 0,5. Données réelles : 60570 messages après dédoublonnage, 15 % gardé
 | generated, unseen templates (en) | 1100 | 0.938 | 0.956 | 0.963 | 0.960 | 0.142 | 0.992 |
 | generated, unseen templates (es) | 1100 | 0.959 | 0.949 | 1.000 | 0.974 | 0.173 | 1.000 |
 
-Au seuil de **0,9**, celui où l'app ajoute le signal « ressemble à des arnaques connues » :
+Au seuil de **0,9**, celui où l'app ajoute le signal « ressemble à des arnaques connues » et où,
+en mode autonome, le modèle classe seul le message « Suspect » :
 
 | Jeu d'évaluation | n | Exactitude | Précision | Rappel | F1 | Faux positifs | AUC |
 |---|---|---|---|---|---|---|---|
@@ -59,6 +60,12 @@ Au seuil de **0,9**, celui où l'app ajoute le signal « ressemble à des arnaqu
 | generated (fr) | 1100 | 0.995 | 1.000 | 0.993 | 0.996 | 0.000 | 1.000 |
 | generated (en) | 1100 | 0.935 | 1.000 | 0.915 | 0.956 | 0.000 | 0.992 |
 | generated (es) | 1100 | 0.999 | 1.000 | 0.999 | 0.999 | 0.000 | 1.000 |
+
+Au seuil de **0,98**, celui où, en mode autonome, le modèle classe seul le message « Danger élevé » :
+
+| Jeu d'évaluation | n | Exactitude | Précision | Rappel | F1 | Faux positifs | AUC |
+|---|---|---|---|---|---|---|---|
+| real (held out) | 9086 | 0.912 | 0.999 | 0.784 | 0.878 | 0.001 | 0.998 |
 
 ### `category`
 
@@ -78,9 +85,17 @@ traductions restent ensemble) : exactitude **0.812**.
 
 ### `intent`
 
-Validation croisée en 4 parts sur des formulations jamais vues (13 intentions) :
-exactitude **0.663**. Quand le modèle hésite (moins de 45 %), ZenAI
-se rabat sur des mots-clés.
+Validation croisée en 4 parts sur des formulations jamais vues (13 sujets et la classe
+« autre question »). ZenAI tient un sujet pour compris quand le modèle lui donne au moins 45 % et
+que ce n'est pas « autre question » :
+
+- questions des sujets connus tenues pour comprises : **0.678** ;
+- bon sujet quand la question est tenue pour comprise : **0.777** ;
+- questions hors des sujets connus reconnues comme telles : **0.744** ;
+- exactitude brute sur les 14 classes : 0.585.
+
+Quand la question n'est pas comprise, ZenAI essaie des mots-clés, puis répond à partir de tous
+les faits de l'analyse (reformulés par Apple Intelligence quand l'iPhone l'a).
 
 ### `url`
 
@@ -97,25 +112,37 @@ générés. L'app n'utilise ce modèle qu'au seuil de **0,95**, et jamais pour u
 <!-- web -->
 ## Les modèles du site
 
-La démo du site utilise les modèles de l'app réduits à leurs poids les plus forts ([`web.py`](web.py)),
-téléchargés par le navigateur seulement quand un visiteur lance une analyse, et exécutés en Rust
-compilé en WebAssembly (`src/models.rs`, vérifié par `tests/model_golden.rs`).
+La démo du site utilise **les mêmes modèles que l'app, entiers** ([`web.py`](web.py)) : le
+navigateur les télécharge quand un visiteur lance une analyse et les exécute en Rust compilé en
+WebAssembly (`src/models.rs`, vérifié par `tests/model_golden.rs`). Mêmes seuils, même autonomie.
 
-| Modèle | Poids gardés | Taille | App | Site |
-|---|---|---|---|---|
-| `scam` (seuil 0,9) | 40000 | 195 Ko | rappel 0.899, faux positifs 0.0017 | rappel 0.878, faux positifs 0.0017 |
-| `url` (seuil 0,95) | 50000 | 244 Ko | rappel 0.611, faux positifs 0.0027 | rappel 0.598, faux positifs 0.0027 |
-| `category` | 6000 | 82 Ko | — | même famille que l'app pour 100.0% des messages générés |
+| Modèle | Poids | Taille |
+|---|---|---|
+| `scam` | 162685 | 794 Ko |
+| `url` | 238101 | 1162 Ko |
+| `category` | 13193 | 180 Ko |
 <!-- /web -->
 
-## Limites
+## Apprentissage sur l'appareil
 
-- Un modèle statistique se trompe : il ne décide jamais seul. Le verdict de MailZen reste celui du
-  moteur de règles ; les modèles ajoutent des signaux (« ressemble à des arnaques connues »,
-  « lien proche de liens de phishing connus ») et la famille d'arnaque, que ZenAI explique avec
-  son niveau de confiance.
+Chaque correction de l'utilisateur (« MailZen s'est trompé ? ») réentraîne sur l'iPhone, en Swift
+(`PersonalModel.swift`), une couche personnelle ajoutée au modèle `scam` : une régression
+logistique sur les seules caractéristiques des messages corrigés, retenue par 513 messages de
+référence (`anchors.json`) dont les réponses ne doivent pas bouger. Le message corrigé est
+mémorisé tel quel ; ceux qui lui ressemblent changent de score. Rien ne quitte l'appareil.
+
+## Autonomie et limites
+
+- En mode autonome (par défaut), le modèle `scam` décide seul quand il est sûr : au moins
+  « Suspect » dès 0,9 et « Danger élevé » dès 0,98, même si aucune règle ne s'est déclenchée
+  (faux positifs mesurés ci-dessus). En dessous, il n'ajoute rien : les règles décident.
+- Il ne se prononce jamais contre un message dont tous les liens mènent à des domaines officiels
+  vérifiés, et ce que l'utilisateur a appris à MailZen n'abaisse jamais un score en présence
+  d'une usurpation ou d'une pièce jointe dangereuse.
+- Un modèle statistique se trompe : les mesures de cette fiche disent à quelle fréquence. Les
+  données réelles sont en anglais ; le français et l'espagnol reposent sur le corpus généré.
 - Le modèle des liens ne voit que l'adresse : ni la page, ni sa réputation en temps réel. Les
   petits sites inconnus et les liens de suivi des newsletters sont ses faux positifs les plus
-  fréquents.
-- Les arnaques évoluent : les modèles doivent être réentraînés régulièrement, avec les
-  corrections exportées depuis l'app.
+  fréquents ; il ne signale donc qu'à partir de 0,95.
+- Les arnaques évoluent : l'apprentissage sur l'appareil suit l'utilisateur ; le modèle de base
+  doit être réentraîné régulièrement (`--feedback`).

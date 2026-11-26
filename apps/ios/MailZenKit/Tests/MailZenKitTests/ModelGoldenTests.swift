@@ -6,18 +6,18 @@ import Testing
 
 @Suite struct ModelGoldenTests {
     @Test func theModelsMatchTheTraining() throws {
-        try check("Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis", scam: 0.999709, category: "delivery", categoryP: 0.978498, intent: "sender", intentP: 0.232467)
-        try check("Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30.", scam: 0.000767, category: "tech_support", categoryP: 0.342667, intent: "sender", intentP: 0.270319)
-        try check("Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login", scam: 0.999897, category: "account", categoryP: 0.875623, intent: "password", intentP: 0.364534)
-        try check("Hi Emma, lunch on Saturday at noon?", scam: 0.000177, category: "business", categoryP: 0.523374, intent: "summary", intentP: 0.648042)
-        try check("Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago", scam: 0.999050, category: "delivery", categoryP: 0.996480, intent: "money", intentP: 0.323196)
-        try check("Hola Pablo, ¿puedes revisar la presentación antes del viernes?", scam: 0.026648, category: "romance", categoryP: 0.264294, intent: "summary", intentP: 0.443717)
-        try check("J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures.", scam: 0.999908, category: "blackmail", categoryP: 0.997381, intent: "money", intentP: 0.338267)
-        try check("ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin.", scam: 0.234710, category: "business", categoryP: 0.647173, intent: "summary", intentP: 0.567494)
-        try check("", scam: 0.046494, category: "romance", categoryP: 0.462628, intent: "summary", intentP: 0.527129)
-        try check("pourquoi ce mail est-il suspect ?", scam: 0.512968, category: "business", categoryP: 0.578666, intent: "why", intentP: 0.999242)
-        try check("I clicked the link, what now?", scam: 0.710674, category: "romance", categoryP: 0.659660, intent: "clicked", intentP: 0.995607)
-        try check("¿Puedo recuperar mi dinero?", scam: 0.603609, category: "romance", categoryP: 0.725571, intent: "money", intentP: 0.986344)
+        try check("Colissimo : votre colis est en attente, frais de 1,99 € à régler : https://bit.ly/c0lis", scam: 0.999709, category: "delivery", categoryP: 0.978498, intent: "sender", intentP: 0.158251)
+        try check("Rappel : votre rendez-vous chez le dentiste est le 12/3 à 14h30.", scam: 0.000767, category: "tech_support", categoryP: 0.342667, intent: "sender", intentP: 0.298575)
+        try check("Your Netflix account will be suspended within 24 hours. Confirm your payment: http://netfIix-secure.xyz/login", scam: 0.999897, category: "account", categoryP: 0.875623, intent: "password", intentP: 0.367670)
+        try check("Hi Emma, lunch on Saturday at noon?", scam: 0.000177, category: "business", categoryP: 0.523374, intent: "summary", intentP: 0.590937)
+        try check("Su paquete está retenido en aduanas. Pague 2,99 € aquí: https://correos-envio.top/pago", scam: 0.999050, category: "delivery", categoryP: 0.996480, intent: "other", intentP: 0.628741)
+        try check("Hola Pablo, ¿puedes revisar la presentación antes del viernes?", scam: 0.026648, category: "romance", categoryP: 0.264294, intent: "summary", intentP: 0.498913)
+        try check("J'ai piraté votre ordinateur. Envoyez 900 € en Bitcoin sous 48 heures.", scam: 0.999908, category: "blackmail", categoryP: 0.997381, intent: "money", intentP: 0.279755)
+        try check("ÉTÉ 2026 : Àçcéntués, chiffres 0123456789 et ponctuation… — fin.", scam: 0.234710, category: "business", categoryP: 0.647173, intent: "summary", intentP: 0.466683)
+        try check("", scam: 0.046494, category: "romance", categoryP: 0.462628, intent: "summary", intentP: 0.463219)
+        try check("pourquoi ce mail est-il suspect ?", scam: 0.512968, category: "business", categoryP: 0.578666, intent: "why", intentP: 0.994945)
+        try check("I clicked the link, what now?", scam: 0.710674, category: "romance", categoryP: 0.659660, intent: "clicked", intentP: 0.995594)
+        try check("¿Puedo recuperar mi dinero?", scam: 0.603609, category: "romance", categoryP: 0.725571, intent: "money", intentP: 0.983559)
     }
 
     @Test func theLinkModelMatchesTheTraining() throws {

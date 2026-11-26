@@ -26,7 +26,7 @@ struct FeedbackCard: View {
                     .font(.headline).foregroundStyle(Theme.text)
             }
             if saved {
-                Label(tr("Merci : c’est noté, sur cet appareil uniquement.", "Thank you: noted, on this device only.", "Gracias: anotado, solo en este dispositivo."),
+                Label(tr("Merci : MailZen vient d’apprendre de ce message, sur cet appareil uniquement.", "Thank you: MailZen just learned from this message, on this device only.", "Gracias: MailZen acaba de aprender de este mensaje, solo en este dispositivo."),
                       systemImage: "checkmark.circle.fill")
                     .font(.subheadline).foregroundStyle(Theme.safe)
                     .transition(.opacity)
@@ -36,9 +36,9 @@ struct FeedbackCard: View {
                         .font(.footnote).foregroundStyle(Theme.muted)
                 }
             } else {
-                Text(tr("Dites-moi ce qu’était vraiment ce message. Vos corrections servent à réentraîner les modèles, si vous choisissez de les exporter.",
-                        "Tell me what this message really was. Your corrections are used to retrain the models, if you choose to export them.",
-                        "Dime qué era realmente este mensaje. Tus correcciones sirven para reentrenar los modelos, si decides exportarlas."))
+                Text(tr("Dites-moi ce qu’était vraiment ce message : le modèle se réentraîne aussitôt sur l’iPhone et reconnaîtra ce qui lui ressemble.",
+                        "Tell me what this message really was: the model retrains at once on the iPhone and will recognize what resembles it.",
+                        "Dime qué era realmente este mensaje: el modelo se reentrena al instante en el iPhone y reconocerá lo que se le parezca."))
                     .font(.footnote).foregroundStyle(Theme.muted)
                 HStack(spacing: 10) {
                     Button { withAnimation(.snappy) { choice = .scam } } label: {

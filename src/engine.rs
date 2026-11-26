@@ -300,7 +300,15 @@ pub struct Report {
     pub signals: Vec<Signal>,
     pub links: Vec<Link>,
     pub model: Option<Insight>,
+    /// The trained model raised the verdict by itself.
+    pub decided_by_model: bool,
 }
+
+/// From these probabilities the scam model decides by itself, as in the app: at least
+/// "suspicious", then "danger" (0.17 % and 0.06 % of false alarms on real messages kept
+/// for the test).
+pub const SUSPICIOUS_FROM: f64 = 0.9;
+pub const DANGER_FROM: f64 = 0.98;
 
 impl Report {
     pub fn confidence_label(&self) -> &'static T3 {
@@ -779,6 +787,7 @@ pub fn analyze_with(text: &str, trained: Option<&Models>) -> Report {
 
     let words = lower.split_whitespace().count();
     let mut insight = None;
+    let mut floor = 0;
     if let Some(m) = trained
         && words >= 5
     {
@@ -789,8 +798,9 @@ pub fn analyze_with(text: &str, trained: Option<&Models>) -> Report {
             .filter(|(_, cp)| *cp >= 0.4);
         // A message whose links all lead to official domains is no impersonation.
         let all_official = !links.is_empty() && links.iter().all(|l| l.official);
-        if p >= 0.9 && !all_official {
+        if p >= SUSPICIOUS_FROM && !all_official {
             push(&mut signals, Rule::ModelScam, format!("{:.0} %", p * 100.0));
+            floor = if p >= DANGER_FROM { 70 } else { 45 };
         }
         insight = Some(Insight {
             probability: p,
@@ -800,11 +810,13 @@ pub fn analyze_with(text: &str, trained: Option<&Models>) -> Report {
 
     let raw: u32 = signals.iter().map(|s| s.rule.weight()).sum();
     // Authority alone (a newsletter from a city hall) is no danger.
-    let score = if signals.len() == 1 && signals[0].rule == Rule::Authority {
+    let ruled = if signals.len() == 1 && signals[0].rule == Rule::Authority {
         4
     } else {
         raw.min(98)
     };
+    // The model decides by itself when it is sure and the rules saw less.
+    let score = ruled.max(floor);
     let confidence = match (words, signals.len()) {
         (0..=8, _) => 0,
         (_, 0..=1) => 1,
@@ -818,6 +830,7 @@ pub fn analyze_with(text: &str, trained: Option<&Models>) -> Report {
         signals,
         links,
         model: insight,
+        decided_by_model: floor > ruled,
     }
 }
 
@@ -917,6 +930,25 @@ mod tests {
                 "{lang:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_model_decides_alone_when_it_is_sure() {
+        let trained = Models::from_public().expect("models");
+        // No rule fires on this text: only the model sees the romance scam.
+        let text = "Hello dear, I am a widow engineer working on an oil rig. I saw your profile and your smile touched me. My son is in hospital, I need you to send money by transfer for the operation, I will pay you back when I arrive.";
+        let alone = analyze(text);
+        let with = analyze_with(text, Some(&trained));
+        assert!(
+            with.score > alone.score && with.decided_by_model,
+            "{with:?}"
+        );
+        assert!(with.verdict == Verdict::Suspicious || with.verdict == Verdict::Danger);
+        let calm = analyze_with(
+            "Salut, on se retrouve samedi pour le déjeuner ? Dis-moi si midi te va, je réserve une table.",
+            Some(&trained),
+        );
+        assert!(!calm.decided_by_model && calm.verdict == Verdict::Safe);
     }
 
     #[test]
