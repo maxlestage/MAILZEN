@@ -13,7 +13,7 @@ let package = Package(
         .library(name: "MailZenKit", targets: ["MailZenKit"])
     ],
     targets: [
-        .target(name: "MailZenKit"),
+        .target(name: "MailZenKit", resources: [.process("Resources")]),
         .testTarget(name: "MailZenKitTests", dependencies: ["MailZenKit"]),
     ],
     swiftLanguageModes: [.v6]

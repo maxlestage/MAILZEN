@@ -10,6 +10,8 @@ struct ZenAIView: View {
         let id = UUID()
         let fromUser: Bool
         let lines: [String]
+        /// The answer rewritten by Apple's on-device model, above the facts.
+        var phrased: String? = nil
     }
 
     @State private var bubbles: [Bubble] = []
@@ -63,10 +65,19 @@ struct ZenAIView: View {
             if bubble.fromUser { Spacer(minLength: 40) }
             VStack(alignment: .leading, spacing: 6) {
                 if !bubble.fromUser {
-                    Label("ZenAI", systemImage: "sparkles").font(.caption.weight(.bold)).foregroundStyle(Theme.cyanLight)
+                    Label(bubble.phrased == nil ? "ZenAI" : "ZenAI · Apple Intelligence", systemImage: "sparkles")
+                        .font(.caption.weight(.bold)).foregroundStyle(Theme.cyanLight)
+                }
+                if let phrased = bubble.phrased {
+                    Text(phrased).font(.subheadline).foregroundStyle(Theme.text).textSelection(.enabled)
+                    Text(tr("D’après l’analyse :", "From the analysis:", "Según el análisis:"))
+                        .font(.caption2.weight(.bold)).foregroundStyle(Theme.muted).padding(.top, 4)
                 }
                 ForEach(Array(bubble.lines.enumerated()), id: \.offset) { _, line in
-                    Text(line).font(.subheadline).foregroundStyle(Theme.text).textSelection(.enabled)
+                    Text(line)
+                        .font(bubble.phrased == nil ? .subheadline : .caption)
+                        .foregroundStyle(bubble.phrased == nil ? Theme.text : Theme.muted)
+                        .textSelection(.enabled)
                 }
             }
             .padding(14)
@@ -123,10 +134,16 @@ struct ZenAIView: View {
         withAnimation(.spring) { bubbles.append(Bubble(fromUser: true, lines: [text])) }
         typing = true
         Task {
-            try? await Task.sleep(for: .milliseconds(650))
+            let lines = ZenAI.answer(intent, report: report, message: message)
+            var phrased: String?
+            if OnDeviceModel.isAvailable {
+                phrased = await OnDeviceModel.phrase(question: text, facts: lines)
+            } else {
+                try? await Task.sleep(for: .milliseconds(650))
+            }
             typing = false
             withAnimation(.spring) {
-                bubbles.append(Bubble(fromUser: false, lines: ZenAI.answer(intent, report: report, message: message)))
+                bubbles.append(Bubble(fromUser: false, lines: lines, phrased: phrased))
             }
         }
     }

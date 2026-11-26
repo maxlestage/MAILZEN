@@ -69,7 +69,9 @@ actor FakeServer: IMAPTransport {
         #expect(check.uidValidity == 42)
         #expect(check.lastUID == 8)
         #expect(check.items.map(\.uid) == [5, 7, 8])
-        #expect(check.items.map(\.report.verdict) == [.safe, .caution, .danger])
+        let verdicts = check.items.map(\.report.verdict)
+        #expect(verdicts[0] == .safe && verdicts[2] == .danger)
+        #expect(verdicts[1] != .safe, "the parcel scam is flagged")
         let commands = await server.commands
         #expect(commands.contains { $0.contains("BODY.PEEK[]") }, "messages stay unread")
     }

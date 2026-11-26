@@ -28,10 +28,43 @@ public enum ZenAI {
         (.why, ["pourquoi", "why", "por qué", "dangereux", "suspect", "dangerous", "peligroso"]),
     ]
 
-    /// The intent of a free question.
+    /// The intent of a free question: the trained model when it is sure enough, the
+    /// keywords otherwise.
     public static func intent(of question: String) -> Intent {
+        if let models = Models.shared {
+            let guess = models.intent(question)
+            if guess.probability >= 0.45, let intent = Intent(rawValue: guess.label) {
+                return intent
+            }
+        }
         let q = question.lowercased()
         return keywords.first { $0.1.contains { q.contains($0) } }?.0 ?? .summary
+    }
+
+    /// What the trained models say, in words.
+    static func modelLines(_ report: Report) -> [String] {
+        guard let m = report.model else { return [] }
+        let pct = Int((m.probability * 100).rounded())
+        if m.probability >= 0.5 {
+            var lines = [tr("Mon modèle entraîné estime à \(pct) % que ce texte ressemble à des arnaques connues.",
+                            "My trained model rates at \(pct)% the likelihood that this text looks like known scams.",
+                            "Mi modelo entrenado estima en un \(pct) % que este texto se parece a estafas conocidas.")]
+            if let c = m.category {
+                let cp = Int((m.categoryProbability * 100).rounded())
+                lines.append(tr("Il ressemble surtout à : \(c.label.fr) (confiance \(cp) %). ",
+                                "It mostly looks like: \(c.label.en) (\(cp)% confidence). ",
+                                "Se parece sobre todo a: \(c.label.es) (confianza \(cp) %). ") + c.advice.localized)
+            }
+            return lines
+        }
+        if m.probability <= 0.2 {
+            return [tr("Mon modèle entraîné ne reconnaît pas de tournure d’arnaque (\(pct) %).",
+                       "My trained model recognizes no scam wording (\(pct)%).",
+                       "Mi modelo entrenado no reconoce redacción de estafa (\(pct) %).")]
+        }
+        return [tr("Mon modèle entraîné hésite (\(pct) %) : fiez-vous aux preuves ci-dessus.",
+                   "My trained model is unsure (\(pct)%): rely on the evidence above.",
+                   "Mi modelo entrenado duda (\(pct) %): fíate de las pruebas anteriores.")]
     }
 
     public static func answer(question: String, report: Report, message: EmailMessage?) -> [String] {
@@ -50,6 +83,7 @@ public enum ZenAI {
                 tr("Verdict : \(verdict), \(report.score)/100, confiance \(report.confidenceLabel.fr.lowercased()).",
                    "Verdict: \(verdict), \(report.score)/100, \(report.confidenceLabel.en.lowercased()) confidence.",
                    "Veredicto: \(verdict), \(report.score)/100, confianza \(report.confidenceLabel.es.lowercased())."),
+            ] + modelLines(report) + [
                 report.verdict.advice.localized,
                 tr("Posez-moi une question : pourquoi c’est suspect, qui est l’expéditeur, si le lien est dangereux…",
                    "Ask me a question: why it is suspicious, who the sender is, whether the link is dangerous…",
@@ -60,11 +94,12 @@ public enum ZenAI {
                 return [tr("Je n’ai relevé aucun signal important dans ce message. Cela ne garantit pas qu’il soit sans danger : restez attentif à toute demande inhabituelle.",
                            "I found no significant signal in this message. That does not guarantee it is safe: stay alert to any unusual request.",
                            "No he encontrado ninguna señal importante en este mensaje. Eso no garantiza que sea seguro: atento a cualquier petición inusual.")]
+                    + modelLines(report)
             }
             return [tr("Ce message présente \(report.signals.count) élément(s) préoccupant(s) :",
                        "This message shows \(report.signals.count) worrying element(s):",
                        "Este mensaje presenta \(report.signals.count) elemento(s) preocupante(s):")]
-                + bullets(report.signals) + [report.verdict.advice.localized]
+                + bullets(report.signals) + modelLines(report) + [report.verdict.advice.localized]
         case .sender:
             guard let address = message?.fromAddress, let domain = emailDomain(address) else {
                 return [tr("Je ne vois pas d’adresse d’expéditeur dans ce message : je ne peux pas dire qui l’a envoyé. Ne vous fiez pas au nom affiché.",
