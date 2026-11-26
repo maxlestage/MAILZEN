@@ -396,6 +396,10 @@ générés. L'app n'utilise ce modèle qu'au seuil de **0,95**, et jamais pour u
     CARD.write_text(card)
     print("written", OUT, TESTS, CARD)
 
+    # ----- The models of the website demo -----
+    import web
+    print(json.dumps(web.export(args.data), indent=1))
+
 
 if __name__ == "__main__":
     main()

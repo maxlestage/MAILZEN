@@ -94,6 +94,20 @@ générés. L'app n'utilise ce modèle qu'au seuil de **0,95**, et jamais pour u
 | real, unseen domains, threshold 0.95 | 129499 | 0.780 | 0.996 | 0.614 | 0.759 | 0.003 | 0.987 |
 | generated email links, threshold 0.95 | 10000 | 0.983 | 1.000 | 0.957 | 0.978 | 0.000 | 1.000 |
 
+<!-- web -->
+## Les modèles du site
+
+La démo du site utilise les modèles de l'app réduits à leurs poids les plus forts ([`web.py`](web.py)),
+téléchargés par le navigateur seulement quand un visiteur lance une analyse, et exécutés en Rust
+compilé en WebAssembly (`src/models.rs`, vérifié par `tests/model_golden.rs`).
+
+| Modèle | Poids gardés | Taille | App | Site |
+|---|---|---|---|---|
+| `scam` (seuil 0,9) | 40000 | 195 Ko | rappel 0.899, faux positifs 0.0017 | rappel 0.878, faux positifs 0.0017 |
+| `url` (seuil 0,95) | 50000 | 244 Ko | rappel 0.611, faux positifs 0.0027 | rappel 0.598, faux positifs 0.0027 |
+| `category` | 6000 | 82 Ko | — | même famille que l'app pour 100.0% des messages générés |
+<!-- /web -->
+
 ## Limites
 
 - Un modèle statistique se trompe : il ne décide jamais seul. Le verdict de MailZen reste celui du

@@ -7,6 +7,7 @@ pub mod engine;
 pub mod i18n;
 pub mod icons;
 pub mod islands;
+pub mod models;
 pub mod routes;
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -1841,8 +1841,80 @@ fn zenai(ctx: &Ctx<'_>) -> Element {
                             .text(t(&["La sécurité de l’assistant", "The assistant’s safety", "La seguridad del asistente"])),
                     )
                     .child(checks(ctx, &ZENAI_RULES)),
-            ),
+            )
+            .child(models_block(ctx)),
     )
+}
+
+/// The trained models: what they learned and how well they do (ml/MODEL_CARD.md).
+fn models_block(ctx: &Ctx<'_>) -> Element {
+    let t = |x: &T3| ctx.t(x);
+    let stats: [(u32, &str, T3); 4] = [
+        (
+            98,
+            " %",
+            [
+                "de bonnes réponses sur des messages jamais vus",
+                "accuracy on messages never seen before",
+                "de aciertos en mensajes nunca vistos",
+            ],
+        ),
+        (
+            871,
+            " k",
+            [
+                "liens étudiés par le modèle des liens",
+                "links studied by the link model",
+                "enlaces estudiados por el modelo de enlaces",
+            ],
+        ),
+        (
+            81,
+            " %",
+            [
+                "de familles d’arnaques bien reconnues",
+                "of scam families recognized correctly",
+                "de familias de estafas bien reconocidas",
+            ],
+        ),
+        (
+            13,
+            "",
+            [
+                "sujets compris par ZenAI, en trois langues",
+                "topics understood by ZenAI, in three languages",
+                "temas que ZenAI entiende, en tres idiomas",
+            ],
+        ),
+    ];
+    div()
+        .class("goals models")
+        .attr("data-reveal", "")
+        .child(p().class("goals__title").text(t(&[
+            "Des modèles entraînés, qui tournent sur l’appareil",
+            "Trained models that run on the device",
+            "Modelos entrenados que funcionan en el dispositivo",
+        ])))
+        .child(div().class("stats").children(stats.iter().enumerate().map(
+            |(i, (n, suffix, label))| {
+                div()
+                    .class("stat")
+                    .style(format!("--i:{i}"))
+                    .child(
+                        strong()
+                            .class("stat__num")
+                            .attr("data-count", n.to_string())
+                            .attr("data-suffix", *suffix)
+                            .text(format!("{}{suffix}", number(ctx.lang(), u64::from(*n)))),
+                    )
+                    .child(span().text(t(label)))
+            },
+        )))
+        .child(p().class("models__note").text(t(&[
+            "Quatre modèles, entraînés sur des dizaines de milliers d’arnaques et de messages légitimes en français, anglais et espagnol, reconnaissent les tournures d’arnaque, la famille d’arnaque, les liens de phishing et les questions posées à ZenAI. Ils ne décident jamais seuls : ils ajoutent des signaux au moteur de règles. Ils tournent sur l’iPhone, et dans la démo ci-dessus, dans votre navigateur.",
+            "Four models, trained on tens of thousands of scams and legitimate messages in French, English and Spanish, recognize scam wording, the family of scam, phishing links and the questions asked to ZenAI. They never decide alone: they add signals to the rules engine. They run on the iPhone, and in the demo above, in your browser.",
+            "Cuatro modelos, entrenados con decenas de miles de estafas y mensajes legítimos en francés, inglés y español, reconocen la redacción de las estafas, la familia de estafa, los enlaces de phishing y las preguntas a ZenAI. Nunca deciden solos: añaden señales al motor de reglas. Funcionan en el iPhone y, en la demo de arriba, en tu navegador.",
+        ])))
 }
 
 fn manipulation(ctx: &Ctx<'_>) -> Element {
