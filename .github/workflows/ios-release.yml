@@ -20,7 +20,8 @@
 #      - secret ASC_KEY_ID          the key ID
 #      - secret ASC_ISSUER_ID       the issuer ID shown above the keys
 #      - secret ASC_KEY_P8          the content of the .p8 file
-#      - secret APPLE_TEAM_ID       the team ID (developer.apple.com → Membership)
+#      - secret APPLE_TEAM_ID       optional: the team ID (developer.apple.com →
+#                                   Membership); read from Apple when missing
 #   5. If the first archive complains about the App Group: developer.apple.com →
 #      Identifiers → App Groups → + → group.com.maxlestage.mailzen (shared by the app
 #      and its share extension, for the senders and corrections the user teaches it).
@@ -79,15 +80,15 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-      TEAM: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - name: Configuration
         id: config
         run: |
-          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ] || [ -z "$TEAM" ]; then
-            echo "::notice::TestFlight is not configured: add the secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID (see ios-release.yml). The unsigned app bundle is built anyway."
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then
+            echo "::notice::TestFlight is not configured: add the secrets ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (see ios-release.yml). The unsigned app bundle is built anyway."
             echo "### ⏸️ TestFlight not configured" >> "$GITHUB_STEP_SUMMARY"
-            echo "Add the secrets ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID in GitHub → Settings → Secrets and variables → Actions, then run this workflow again." >> "$GITHUB_STEP_SUMMARY"
+            echo "Add the secrets ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 in GitHub → Settings → Secrets and variables → Actions, then run this workflow again." >> "$GITHUB_STEP_SUMMARY"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -104,6 +105,8 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" apps/ios/scripts/asc.py
       - name: Archive and sign
         if: steps.config.outputs.ready == 'true'
+        env:
+          TEAM: ${{ steps.asc.outputs.team_id }}
         run: |
           set -euo pipefail
           brew install xcodegen

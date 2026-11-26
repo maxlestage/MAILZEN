@@ -6,8 +6,10 @@
 - checks that the app exists in App Store Connect (Apple does not let the API create it:
   App Store Connect → Apps → + → New app, once).
 
-Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the content of the .p8 key).
-Writes `app_exists=true|false` to $GITHUB_OUTPUT.
+Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the content of the .p8 key), and
+optionally APPLE_TEAM_ID: without it, the team is read from Apple (the App ID prefix of
+the bundle IDs).
+Writes `app_exists=true|false` and `team_id=…` to $GITHUB_OUTPUT.
 """
 import json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
@@ -46,6 +48,7 @@ def ensure_bundle(identifier, name):
         bundle = call("POST", "/bundleIds", {"data": {"type": "bundleIds", "attributes": {
             "identifier": identifier, "name": name, "platform": "IOS"}}})["data"]
         print(f"Bundle ID {identifier}: registered")
+    seed = bundle["attributes"].get("seedId") or ""
     caps = call("GET", f"/bundleIds/{bundle['id']}/bundleIdCapabilities")["data"]
     if any(c["attributes"]["capabilityType"] == "APP_GROUPS" for c in caps):
         print(f"  App Groups: already enabled")
@@ -54,11 +57,15 @@ def ensure_bundle(identifier, name):
              "attributes": {"capabilityType": "APP_GROUPS"},
              "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle["id"]}}}}})
         print(f"  App Groups: enabled")
+    return seed
 
 
 def main():
-    for identifier, name in BUNDLES:
-        ensure_bundle(identifier, name)
+    seeds = [ensure_bundle(identifier, name) for identifier, name in BUNDLES]
+    team = os.environ.get("APPLE_TEAM_ID", "").strip() or next((s for s in seeds if s), "")
+    if not team:
+        raise SystemExit("::error::No team ID: add the secret APPLE_TEAM_ID (developer.apple.com → Membership).")
+    print(f"Team: {team}" + ("" if os.environ.get("APPLE_TEAM_ID", "").strip() else " (read from Apple)"))
     apps = call("GET", "/apps", query={"filter[bundleId]": BUNDLES[0][0]})["data"]
     exists = bool(apps)
     if exists:
@@ -69,6 +76,7 @@ def main():
               "platform iOS, bundle ID com.maxlestage.mailzen, any SKU. The signed .ipa is kept as an artifact meanwhile.")
     with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as out:
         out.write(f"app_exists={'true' if exists else 'false'}\n")
+        out.write(f"team_id={team}\n")
 
 
 if __name__ == "__main__":
