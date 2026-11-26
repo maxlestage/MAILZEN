@@ -46,6 +46,7 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
         UIUserInterfaceStyle: Dark
         NSCameraUsageDescription: "L’appareil photo sert à scanner les QR codes : la destination s’affiche avant toute ouverture."
         NSPhotoLibraryUsageDescription: "MailZen lit les captures que vous choisissez pour y trouver du texte et des QR codes, sur l’appareil."
