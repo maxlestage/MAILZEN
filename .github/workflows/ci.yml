@@ -95,11 +95,17 @@ jobs:
           git merge --no-ff --no-edit "$SHA" -m "Merge branch '$BRANCH' into master (auto-merge)"
           git push origin HEAD:master
           echo "::notice title=Auto-merge::$BRANCH merged into master"
-      # A push made with GITHUB_TOKEN starts no workflow: deploy by hand.
+      # A push made with GITHUB_TOKEN starts no workflow: deploy by hand, once GitHub
+      # sees the new master (a workflow started too early builds the previous one).
       - name: Deploy master (GitHub Pages, Heroku)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          merged=$(git rev-parse HEAD)
+          for _ in $(seq 1 30); do
+            [ "$(gh api "repos/$GITHUB_REPOSITORY/branches/master" --jq .commit.sha)" = "$merged" ] && break
+            sleep 2
+          done
           gh workflow run pages.yml --ref master --repo "$GITHUB_REPOSITORY"
           gh workflow run heroku.yml --ref master --repo "$GITHUB_REPOSITORY"
           gh workflow run ios-release.yml --ref master --repo "$GITHUB_REPOSITORY"
