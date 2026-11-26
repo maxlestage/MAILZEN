@@ -81,6 +81,21 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 | `src/data.rs`, `src/i18n.rs` | les textes, en français, anglais et espagnol |
 | `public/` | la feuille de style, le logo, les icônes de la PWA, l’image de partage |
 
+## L’app iOS (Swift, SwiftUI)
+
+Dans [`apps/ios/`](apps/ios) :
+
+| | |
+|---|---|
+| **MailZenKit** | le cœur en Swift pur, testé (`swift test`) : moteur d’analyse, lecture des emails (.eml, MIME, SPF/DKIM/DMARC), Attachment Guard (type réel, SHA-256, PDF, Office, ZIP, HTML, SVG, CSV), client IMAP, Brand Check, ZenAI, Safe Reply, contenu en trois langues |
+| **App** | accueil avec radar animé, scanner (texte, fichier ou pièce jointe, capture lue par OCR, QR code en direct, lien), rapport, ZenAI, Safe Reply, historique local, Apprendre, Brand Check, SOS Cyber, réglages |
+| **Veille** | connexion à une boîte iCloud, Gmail, Yahoo ou IMAP (mot de passe pour app, dans le trousseau), vérification en arrière-plan et notification si un email dangereux arrive |
+| **Extension** | « Partager → MailZen » depuis Mail, Safari, Photos ou Fichiers |
+
+Le projet Xcode est généré par [XcodeGen](apps/ios/project.yml) : la CI compile l’app sur un Mac de
+GitHub à chaque push. Pour l’installer sur un iPhone via TestFlight, sans ordinateur : voir
+[`ios-release.yml`](.github/workflows/ios-release.yml) (compte Apple Developer et clé App Store Connect).
+
 ## Licence
 
 © 2026 Maxime Nathan Lestage, tous droits réservés. Voir [LICENSE](LICENSE).
