@@ -76,7 +76,18 @@ pub fn scan(props: &str) -> Node {
     let start = move || {
         let id = run.get() + 1;
         run.set(id);
-        report.set(Some(engine::analyze(&text.get())));
+        let message = text.get();
+        // The rules answer at once; the trained models refine the report as soon as they
+        // are downloaded (the first time), while the steps play.
+        report.set(Some(engine::analyze(&message)));
+        #[cfg(target_arch = "wasm32")]
+        crate::client::with_models(move |models| {
+            if run.get() == id
+                && let Some(m) = models
+            {
+                report.set(Some(engine::analyze_with(&message, Some(&m))));
+            }
+        });
         phase.set(1);
         for step in 2..=DONE {
             after(i32::from(step - 1) * 620, move || {
@@ -160,9 +171,9 @@ pub fn scan(props: &str) -> Node {
                 ),
         )
         .child(p().class("scan__note").child(icon("lock")).text(t(&[
-            "Démo pédagogique : l’analyse tourne dans votre navigateur (Rust compilé en WebAssembly). Rien n’est envoyé.",
-            "Educational demo: the analysis runs in your browser (Rust compiled to WebAssembly). Nothing is sent.",
-            "Demo educativa: el análisis se ejecuta en tu navegador (Rust compilado a WebAssembly). No se envía nada.",
+            "Démo : l’analyse tourne dans votre navigateur (Rust compilé en WebAssembly), avec les règles et les modèles entraînés de l’app. Rien n’est envoyé.",
+            "Demo: the analysis runs in your browser (Rust compiled to WebAssembly), with the rules and the trained models of the app. Nothing is sent.",
+            "Demo: el análisis se ejecuta en tu navegador (Rust compilado a WebAssembly), con las reglas y los modelos entrenados de la app. No se envía nada.",
         ])));
 
     let output = div()
@@ -274,6 +285,29 @@ fn report_view(lang: Lang, r: &Report) -> Element {
                         ))),
                 ),
         );
+    if let Some(m) = &r.model {
+        let mut line = format!(
+            "{} : {:.0} %",
+            t(&[
+                "Ressemblance avec des arnaques connues",
+                "Resemblance to known scams",
+                "Parecido con estafas conocidas"
+            ]),
+            m.probability * 100.0
+        );
+        if let Some(label) = m
+            .category
+            .as_ref()
+            .and_then(|(key, _)| crate::models::category_label(key))
+        {
+            line.push_str(&format!(" · {}", t(label)));
+        }
+        card = card.child(
+            p().class("report__model")
+                .child(icon("radar"))
+                .child(span().text(line)),
+        );
+    }
     if !technical.is_empty() {
         card = card.child(h4().text(t(&[
             "Signaux techniques",
@@ -323,11 +357,19 @@ fn report_view(lang: Lang, r: &Report) -> Element {
             "Enlaces analizados",
         ])));
         card = card.child(ul().class("links").children(r.links.iter().map(|l| {
-            Node::from(
-                li().class(if l.risky { "is-risky" } else { "is-ok" })
-                    .child(icon(if l.risky { "alert" } else { "check" }))
-                    .child(code().text(l.host.clone())),
-            )
+            let note = if l.official {
+                Some(t(&["domaine officiel", "official domain", "dominio oficial"]).to_owned())
+            } else {
+                l.model.map(|p| format!("{:.0} % phishing", p * 100.0))
+            };
+            let mut item = li()
+                .class(if l.risky { "is-risky" } else { "is-ok" })
+                .child(icon(if l.risky { "alert" } else { "check" }))
+                .child(code().text(l.host.clone()));
+            if let Some(note) = note {
+                item = item.child(small().class("links__model").text(note));
+            }
+            Node::from(item)
         })));
     }
     card.child(

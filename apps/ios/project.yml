@@ -29,6 +29,10 @@ targets:
     dependencies:
       - package: MailZenKit
       - target: MailZenShare
+    entitlements:
+      path: MailZen/MailZen.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.maxlestage.mailzen]
     info:
       path: MailZen/Info.plist
       properties:
@@ -67,6 +71,10 @@ targets:
       - path: MailZen/Shared
     dependencies:
       - package: MailZenKit
+    entitlements:
+      path: MailZenShare/MailZenShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.maxlestage.mailzen]
     info:
       path: MailZenShare/Info.plist
       properties:

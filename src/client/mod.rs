@@ -118,3 +118,53 @@ pub fn later(ms: i32, f: impl FnOnce() + 'static) {
 pub fn scroll_to_top() {
     window().scroll_to_with_x_and_y(0.0, 0.0);
 }
+
+thread_local! {
+    static MODELS: RefCell<Option<Rc<crate::models::Models>>> = const { RefCell::new(None) };
+}
+
+/// The trained models of the demo, downloaded on the first analysis (about 500 KB), then
+/// kept for the page's lifetime. `f` gets `None` when they cannot be loaded (offline): the
+/// analysis then uses the rules alone.
+pub fn with_models(f: impl FnOnce(Option<Rc<crate::models::Models>>) + 'static) {
+    if let Some(m) = MODELS.with(|m| m.borrow().clone()) {
+        f(Some(m));
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut files = Vec::new();
+        for name in crate::models::FILES {
+            files.push(
+                fetch_bytes(&format!(
+                    "{}/assets/models/{name}.mzm",
+                    crate::routes::base()
+                ))
+                .await,
+            );
+        }
+        let models = match files.as_slice() {
+            [Some(s), Some(c), Some(u)] => crate::models::Models::parse(s, c, u).map(Rc::new),
+            _ => None,
+        };
+        if let Some(m) = &models {
+            MODELS.with(|slot| *slot.borrow_mut() = Some(m.clone()));
+        }
+        f(models);
+    });
+}
+
+async fn fetch_bytes(url: &str) -> Option<Vec<u8>> {
+    let response: web_sys::Response =
+        wasm_bindgen_futures::JsFuture::from(window().fetch_with_str(url))
+            .await
+            .ok()?
+            .dyn_into()
+            .ok()?;
+    if !response.ok() {
+        return None;
+    }
+    let buffer = wasm_bindgen_futures::JsFuture::from(response.array_buffer().ok()?)
+        .await
+        .ok()?;
+    Some(js_sys::Uint8Array::new(&buffer).to_vec())
+}

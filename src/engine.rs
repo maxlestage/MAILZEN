@@ -5,6 +5,7 @@
 //! the visitor types. Nothing is sent anywhere. It does not replace the real engine.
 
 use crate::i18n::T3;
+use crate::models::{self, Models};
 
 /// The four verdicts of a report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +83,7 @@ pub enum Family {
     File,
     Behavior,
     Identity,
+    Model,
 }
 
 impl Family {
@@ -92,6 +94,7 @@ impl Family {
             Family::File => &["Fichier", "File", "Archivo"],
             Family::Behavior => &["Comportement", "Behavior", "Comportamiento"],
             Family::Identity => &["Identité", "Identity", "Identidad"],
+            Family::Model => &["Modèle", "Model", "Modelo"],
         }
     }
 }
@@ -119,6 +122,8 @@ pub enum Rule {
     DoubleExtension,
     Macro,
     QrCode,
+    ModelScam,
+    ModelLink,
 }
 
 impl Rule {
@@ -132,6 +137,7 @@ impl Rule {
             Lookalike | FreeMailer => Family::Sender,
             ShortLink | IpLink | PlainHttp | OddTld | DeepSubdomains | LoginWords => Family::Link,
             RiskyFile | DoubleExtension | Macro => Family::File,
+            ModelScam | ModelLink => Family::Model,
         }
     }
 
@@ -158,6 +164,8 @@ impl Rule {
             DoubleExtension => 30,
             Macro => 18,
             QrCode => 8,
+            ModelScam => 16,
+            ModelLink => 14,
         }
     }
 
@@ -241,6 +249,16 @@ impl Rule {
                 "QR code to scan",
                 "Código QR para escanear",
             ],
+            ModelScam => &[
+                "Ressemble à des arnaques connues",
+                "Looks like known scams",
+                "Se parece a estafas conocidas",
+            ],
+            ModelLink => &[
+                "Lien proche de liens de phishing connus",
+                "Link close to known phishing links",
+                "Enlace parecido a enlaces de phishing conocidos",
+            ],
         }
     }
 }
@@ -253,15 +271,27 @@ pub struct Signal {
 }
 
 /// A link found in the message.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Link {
     pub url: String,
     pub host: String,
     pub risky: bool,
+    /// What the link model says, when it ran (never for an official domain).
+    pub model: Option<f64>,
+    pub official: bool,
+}
+
+/// What the trained models say about the text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Insight {
+    /// The probability that it is a scam.
+    pub probability: f64,
+    /// The family it looks like (a key of [`models::category_label`]) and its probability.
+    pub category: Option<(String, f64)>,
 }
 
 /// The result of an analysis.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Report {
     pub score: u32,
     pub verdict: Verdict,
@@ -269,6 +299,7 @@ pub struct Report {
     pub confidence: u8,
     pub signals: Vec<Signal>,
     pub links: Vec<Link>,
+    pub model: Option<Insight>,
 }
 
 impl Report {
@@ -587,8 +618,14 @@ fn is_ip(host: &str) -> bool {
     parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok())
 }
 
-/// Analyses a message.
+/// Analyses a message with the rules alone.
 pub fn analyze(text: &str) -> Report {
+    analyze_with(text, None)
+}
+
+/// Analyses a message with the rules and, when they are loaded, the trained models: a
+/// signal when they are very sure (the thresholds of the app), and the family of scam.
+pub fn analyze_with(text: &str, trained: Option<&Models>) -> Report {
     let lower = text.to_lowercase();
     let mut signals: Vec<Signal> = Vec::new();
     fn push(signals: &mut Vec<Signal>, rule: Rule, evidence: String) {
@@ -667,7 +704,30 @@ pub fn analyze(text: &str) -> Report {
             );
             risky = true;
         }
-        links.push(Link { url, host, risky });
+        let official = models::is_official(&h);
+        let mut model = None;
+        if let Some(m) = trained
+            && !official
+            && !is_ip(&h)
+        {
+            let p = m.url.probabilities(&models::url_features(&url))[0];
+            if p >= 0.95 {
+                push(
+                    &mut signals,
+                    Rule::ModelLink,
+                    format!("{host} ({:.0} %)", p * 100.0),
+                );
+                risky = true;
+            }
+            model = Some(p);
+        }
+        links.push(Link {
+            url,
+            host,
+            risky,
+            model,
+            official,
+        });
     }
 
     // Attachments.
@@ -717,6 +777,27 @@ pub fn analyze(text: &str) -> Report {
         push(&mut signals, Rule::Money, word);
     }
 
+    let words = lower.split_whitespace().count();
+    let mut insight = None;
+    if let Some(m) = trained
+        && words >= 5
+    {
+        let features = models::text_features(text);
+        let p = m.scam.probabilities(&features)[0];
+        let category = (p >= 0.5)
+            .then(|| m.category.best(&features))
+            .filter(|(_, cp)| *cp >= 0.4);
+        // A message whose links all lead to official domains is no impersonation.
+        let all_official = !links.is_empty() && links.iter().all(|l| l.official);
+        if p >= 0.9 && !all_official {
+            push(&mut signals, Rule::ModelScam, format!("{:.0} %", p * 100.0));
+        }
+        insight = Some(Insight {
+            probability: p,
+            category,
+        });
+    }
+
     let raw: u32 = signals.iter().map(|s| s.rule.weight()).sum();
     // Authority alone (a newsletter from a city hall) is no danger.
     let score = if signals.len() == 1 && signals[0].rule == Rule::Authority {
@@ -724,7 +805,6 @@ pub fn analyze(text: &str) -> Report {
     } else {
         raw.min(98)
     };
-    let words = lower.split_whitespace().count();
     let confidence = match (words, signals.len()) {
         (0..=8, _) => 0,
         (_, 0..=1) => 1,
@@ -737,6 +817,7 @@ pub fn analyze(text: &str) -> Report {
         confidence,
         signals,
         links,
+        model: insight,
     }
 }
 
@@ -810,6 +891,42 @@ mod tests {
         assert!(contains_word("1,99 €", "€"));
         let report = analyze("First, the groups meet at https://example.org/agenda");
         assert!(report.signals.is_empty(), "{:?}", report.signals);
+    }
+
+    #[test]
+    fn the_models_sharpen_the_samples() {
+        let trained = Models::from_public().expect("models");
+        for lang in Lang::ALL {
+            let reports: Vec<Report> = SAMPLES
+                .iter()
+                .map(|s| analyze_with(lang.t(&s.text), Some(&trained)))
+                .collect();
+            assert_eq!(reports[0].verdict, Verdict::Danger, "{lang:?}");
+            assert_eq!(reports[3].verdict, Verdict::Safe, "{lang:?}");
+            let parcel = reports[1].model.as_ref().expect("insight");
+            assert_eq!(
+                parcel.category.as_ref().map(|c| c.0.as_str()),
+                Some("delivery"),
+                "{lang:?}"
+            );
+            assert!(
+                reports[3]
+                    .model
+                    .as_ref()
+                    .is_some_and(|m| m.probability < 0.5),
+                "{lang:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn official_links_are_not_judged_by_the_link_model() {
+        let trained = Models::from_public().expect("models");
+        let r = analyze_with(
+            "Suivez votre colis sur https://www.laposte.fr/outils/suivre-vos-envois",
+            Some(&trained),
+        );
+        assert!(r.links[0].official && r.links[0].model.is_none());
     }
 
     #[test]

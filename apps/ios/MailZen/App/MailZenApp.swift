@@ -7,6 +7,7 @@ struct MailZenApp: App {
     @State private var model = AppModel()
     @State private var mailbox = MailboxService.shared
     @AppStorage("onboarded") private var onboarded = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // The user's settings and lists reach the engine before any analysis.
@@ -27,6 +28,10 @@ struct MailZenApp: App {
             .preferredColorScheme(.dark)
             .tint(Theme.cyan)
             .onOpenURL { url in model.open(url) }
+            .onChange(of: scenePhase) { _, phase in
+                // The share extension may have learned something meanwhile.
+                if phase == .active { PersonalStore.shared.reload() }
+            }
         }
         .modelContainer(Store.container)
         .backgroundTask(.appRefresh(MailboxService.refreshTaskID)) {

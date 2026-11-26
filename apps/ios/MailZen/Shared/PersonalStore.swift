@@ -33,7 +33,7 @@ final class PersonalStore {
 
     func setUseModels(_ value: Bool) {
         useModels = value
-        UserDefaults.standard.set(value, forKey: Keys.useModels)
+        defaults.set(value, forKey: Keys.useModels)
         Engine.useModels = value
     }
 
@@ -42,13 +42,26 @@ final class PersonalStore {
         static let useModels = "useModels"
     }
 
+    /// The App Group shared by the app and the share extension: what is learned in one is
+    /// known by the other. Without it (a build without entitlements), each keeps its own.
+    static let appGroup = "group.com.maxlestage.mailzen"
+    private let defaults = UserDefaults(suiteName: PersonalStore.appGroup) ?? .standard
+
     private var correctionsURL: URL? {
-        try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        if let shared = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroup) {
+            return shared.appendingPathComponent("corrections.json")
+        }
+        return try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("corrections.json")
     }
 
     private init() {
-        let defaults = UserDefaults.standard
+        useModels = true
+        reload()
+    }
+
+    /// Reads what the app or the share extension saved last.
+    func reload() {
         useModels = defaults.object(forKey: Keys.useModels) as? Bool ?? true
         if let data = defaults.data(forKey: Keys.lists), let saved = try? JSONDecoder().decode(PersonalLists.self, from: data) {
             lists = saved
@@ -68,14 +81,14 @@ final class PersonalStore {
 
     private func saveLists() {
         if let data = try? JSONEncoder().encode(lists) {
-            UserDefaults.standard.set(data, forKey: Keys.lists)
+            defaults.set(data, forKey: Keys.lists)
         }
         Engine.personal = lists
     }
 
     private func saveCorrections() {
         guard let url = correctionsURL, let data = try? JSONEncoder().encode(corrections) else { return }
-        try? data.write(to: url, options: [.atomic, .completeFileProtection])
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     // MARK: Senders

@@ -436,6 +436,8 @@ a:hover .roll::after, a:focus-visible .roll::after { transform: translateY(-100%
 .goals { margin-top: 30px; padding: 22px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: rgba(10, 19, 40, .55); }
 .goals__title { font: 750 20px var(--display); margin-bottom: 16px; }
 .goals .checks { grid-template-columns: minmax(0, 1fr); }
+.models .stats { margin-bottom: 14px; }
+.models__note { color: var(--muted); font-size: 15px; line-height: 1.55; }
 
 /* Steps of a scan. */
 .steps { position: relative; display: grid; gap: 14px; padding-left: 0; }
@@ -518,6 +520,10 @@ a:hover .roll::after, a:focus-visible .roll::after { transform: translateY(-100%
 .links li { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .links .is-risky .icon { color: var(--danger); }
 .links .is-ok .icon { color: var(--safe); }
+.links__model { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.links .is-risky .links__model { color: var(--danger); }
+.report__model { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+.report__model .icon { flex: none; color: var(--cyan, #22d3ee); margin-top: 2px; }
 .report__advice, .advice { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--c, var(--cyan)) 10%, transparent); font-size: 14.5px; }
 .report__advice .icon, .advice .icon { color: var(--c, var(--cyan)); margin-top: 2px; }
 .indicators { display: grid; gap: 8px; }
