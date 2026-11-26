@@ -91,7 +91,7 @@ struct ScannerView: View {
         .onChange(of: model.pending) { _, _ in takePending() }
     }
 
-    static let fileTypes: [UTType] = [UTType(filenameExtension: "eml") ?? .data, .emailMessage, .plainText, .text, .html]
+    static let fileTypes: [UTType] = [.item]
 
     private var modePicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -165,9 +165,9 @@ struct ScannerView: View {
     private var fileMode: some View {
         VStack(spacing: 16) {
             PulseIcon(systemName: "doc.text.magnifyingglass")
-            Text(tr("Importez un email enregistré (.eml) ou un fichier texte. Les en-têtes, les liens cachés et les pièces jointes sont analysés.",
-                    "Import a saved email (.eml) or a text file. Headers, hidden links and attachments are analyzed.",
-                    "Importa un correo guardado (.eml) o un archivo de texto. Se analizan las cabeceras, los enlaces ocultos y los adjuntos."))
+            Text(tr("Un email enregistré (.eml) ou n’importe quelle pièce jointe : PDF, Word, Excel, ZIP, HTML, SVG, CSV… Attachment Guard vérifie son type réel, son empreinte SHA-256, ses macros, scripts et liens, sans l’ouvrir.",
+                    "A saved email (.eml) or any attachment: PDF, Word, Excel, ZIP, HTML, SVG, CSV… Attachment Guard checks its real type, its SHA-256 fingerprint, its macros, scripts and links, without opening it.",
+                    "Un correo guardado (.eml) o cualquier adjunto: PDF, Word, Excel, ZIP, HTML, SVG, CSV… Attachment Guard comprueba su tipo real, su huella SHA-256, sus macros, scripts y enlaces, sin abrirlo."))
                 .font(.subheadline).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             Button { importing = true } label: {
                 Label(tr("Choisir un fichier", "Choose a file", "Elegir un archivo"), systemImage: "folder")
@@ -268,8 +268,15 @@ struct ScannerView: View {
                 error = tr("Ce fichier ne peut pas être lu.", "This file cannot be read.", "No se puede leer este archivo.")
                 return
             }
-            let raw = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
-            analyze(ScanInput(kind: .email, raw: raw, source: url.lastPathComponent))
+            let ext = url.pathExtension.lowercased()
+            if ["eml", "emlx", "txt"].contains(ext) {
+                let raw = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+                analyze(ScanInput(kind: .email, raw: raw, source: url.lastPathComponent))
+            } else if data.count <= 15 * 1_024 * 1_024 {
+                analyze(ScanInput(kind: .file, raw: data.base64EncodedString(), source: url.lastPathComponent))
+            } else {
+                error = tr("Fichier trop lourd (15 Mo au plus).", "File too large (15 MB at most).", "Archivo demasiado grande (15 MB como máximo).")
+            }
         case .failure(let failure):
             error = failure.localizedDescription
         }
@@ -316,15 +323,17 @@ struct ScanResultView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var model
     @State private var report: Report?
+    @State private var file: FileReport?
 
     var body: some View {
         Group {
             if let report {
-                ReportView(report: report, title: input.title, onSOS: { model.showSOS = true })
+                ReportView(report: report, title: input.title, message: input.message, file: file, onSOS: { model.showSOS = true })
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
                 ScanFlowView {
-                    let computed = input.report
+                    file = input.fileReport
+                    let computed = file?.report ?? input.report
                     context.insert(AnalysisRecord(input: input, report: computed))
                     try? context.save()
                     withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { report = computed }

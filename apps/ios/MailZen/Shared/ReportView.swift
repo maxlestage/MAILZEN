@@ -5,6 +5,8 @@ import MailZenKit
 struct ReportView: View {
     let report: Report
     var title: String? = nil
+    var message: EmailMessage? = nil
+    var file: FileReport? = nil
     var onSOS: (() -> Void)? = nil
 
     private var shareText: String {
@@ -21,6 +23,21 @@ struct ReportView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                if let file { FileCard(file: file) }
+                HStack(spacing: 10) {
+                    NavigationLink {
+                        ZenAIView(report: report, message: message)
+                    } label: {
+                        Label("ZenAI", systemImage: "sparkles")
+                    }
+                    .buttonStyle(GhostButtonStyle(tint: Theme.cyanLight))
+                    NavigationLink {
+                        SafeReplyView(report: report, message: message)
+                    } label: {
+                        Label("Safe Reply", systemImage: "arrowshape.turn.up.left")
+                    }
+                    .buttonStyle(GhostButtonStyle())
+                }
                 if !report.technicalSignals.isEmpty {
                     SectionTitle(eyebrow: tr("Pourquoi", "Why", "Por qué"), title: tr("Signaux détectés", "Signals detected", "Señales detectadas"))
                     ForEach(Array(report.technicalSignals.enumerated()), id: \.offset) { index, signal in

@@ -92,6 +92,8 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
     case lookalike, brandMismatch, freeMailer, replyToMismatch, authFailure
     case shortLink, ipLink, plainHttp, oddTld, deepSubdomains, loginWords
     case riskyFile, doubleExtension, macro, qrCode
+    case typeMismatch, executable, scriptInDocument, autoAction, embeddedFile, officeMacros
+    case externalContent, passwordForm, metaRefresh, archiveRisk, encryptedArchive, zipBomb, formulaInjection
 
     public var family: Family {
         switch self {
@@ -101,6 +103,8 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .authFailure: .technical
         case .shortLink, .ipLink, .plainHttp, .oddTld, .deepSubdomains, .loginWords: .link
         case .riskyFile, .doubleExtension, .macro: .file
+        case .typeMismatch, .executable, .scriptInDocument, .autoAction, .embeddedFile, .officeMacros,
+             .externalContent, .passwordForm, .metaRefresh, .archiveRisk, .encryptedArchive, .zipBomb, .formulaInjection: .file
         }
     }
 
@@ -128,6 +132,19 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .doubleExtension: 30
         case .macro: 18
         case .qrCode: 8
+        case .typeMismatch: 34
+        case .executable: 40
+        case .scriptInDocument: 26
+        case .autoAction: 26
+        case .embeddedFile: 18
+        case .officeMacros: 30
+        case .externalContent: 12
+        case .passwordForm: 30
+        case .metaRefresh: 16
+        case .archiveRisk: 30
+        case .encryptedArchive: 18
+        case .zipBomb: 40
+        case .formulaInjection: 26
         }
     }
 
@@ -163,6 +180,19 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .doubleExtension: T3("Double extension", "Double extension", "Doble extensión")
         case .macro: T3("Activation de macros demandée", "Macros requested", "Se piden macros")
         case .qrCode: T3("QR code à scanner", "QR code to scan", "Código QR para escanear")
+        case .typeMismatch: T3("Type réel différent de l’extension", "Real type differs from the extension", "Tipo real distinto de la extensión")
+        case .executable: T3("Programme exécutable", "Executable program", "Programa ejecutable")
+        case .scriptInDocument: T3("Script dans le document", "Script inside the document", "Script dentro del documento")
+        case .autoAction: T3("Action automatique à l’ouverture", "Automatic action on opening", "Acción automática al abrir")
+        case .embeddedFile: T3("Fichier caché à l’intérieur", "File hidden inside", "Archivo oculto dentro")
+        case .officeMacros: T3("Macros Office", "Office macros", "Macros de Office")
+        case .externalContent: T3("Contenu externe chargé", "External content loaded", "Contenido externo cargado")
+        case .passwordForm: T3("Formulaire de mot de passe", "Password form", "Formulario de contraseña")
+        case .metaRefresh: T3("Redirection automatique", "Automatic redirect", "Redirección automática")
+        case .archiveRisk: T3("Archive contenant un fichier à risque", "Archive holding a risky file", "Archivo comprimido con un fichero de riesgo")
+        case .encryptedArchive: T3("Archive chiffrée", "Encrypted archive", "Archivo cifrado")
+        case .zipBomb: T3("Bombe de décompression", "Decompression bomb", "Bomba de descompresión")
+        case .formulaInjection: T3("Formule dangereuse (CSV)", "Dangerous formula (CSV)", "Fórmula peligrosa (CSV)")
         }
     }
 
@@ -191,6 +221,19 @@ public enum Rule: String, CaseIterable, Codable, Sendable {
         case .doubleExtension: T3("Le fichier se fait passer pour un document alors qu’il s’exécute.", "The file poses as a document but runs as a program.", "El archivo se hace pasar por un documento pero se ejecuta.")
         case .macro: T3("Activer les macros peut installer un logiciel malveillant.", "Enabling macros can install malware.", "Activar macros puede instalar software malicioso.")
         case .qrCode: T3("Un QR code cache sa destination : vérifiez-la avant d’ouvrir.", "A QR code hides its destination: check it before opening.", "Un código QR oculta su destino: compruébalo antes de abrir.")
+        case .typeMismatch: T3("Le contenu du fichier ne correspond pas à son nom : il se déguise.", "The file’s content does not match its name: it is in disguise.", "El contenido no corresponde a su nombre: va disfrazado.")
+        case .executable: T3("Ouvrir ce fichier lancerait un programme sur l’appareil.", "Opening this file would run a program on the device.", "Abrir este archivo ejecutaría un programa en el dispositivo.")
+        case .scriptInDocument: T3("Un document n’a pas besoin de code pour être lu.", "A document needs no code to be read.", "Un documento no necesita código para leerse.")
+        case .autoAction: T3("Le document tente d’agir dès qu’on l’ouvre.", "The document tries to act as soon as it is opened.", "El documento intenta actuar en cuanto se abre.")
+        case .embeddedFile: T3("Un autre fichier est caché dans celui-ci.", "Another file is hidden inside this one.", "Hay otro archivo escondido dentro de este.")
+        case .officeMacros: T3("Les macros peuvent installer un logiciel malveillant si on les active.", "Macros can install malware if they are enabled.", "Las macros pueden instalar malware si se activan.")
+        case .externalContent: T3("Le fichier va chercher du contenu sur Internet à l’ouverture.", "The file fetches content from the Internet when opened.", "El archivo busca contenido en Internet al abrirse.")
+        case .passwordForm: T3("Une page jointe à un email qui demande un mot de passe est un piège classique.", "An attached page asking for a password is a classic trap.", "Una página adjunta que pide una contraseña es una trampa clásica.")
+        case .metaRefresh: T3("La page vous envoie ailleurs sans que vous cliquiez.", "The page sends you elsewhere without a click.", "La página te envía a otro sitio sin hacer clic.")
+        case .archiveRisk: T3("L’archive cache un programme ou un fichier déguisé.", "The archive hides a program or a disguised file.", "El archivo comprimido oculta un programa o un fichero disfrazado.")
+        case .encryptedArchive: T3("Une archive protégée par mot de passe échappe aux antivirus : c’est voulu.", "A password-protected archive escapes antivirus scans: on purpose.", "Un archivo protegido con contraseña escapa a los antivirus: a propósito.")
+        case .zipBomb: T3("Décompresser ce fichier saturerait l’appareil.", "Decompressing this file would overwhelm the device.", "Descomprimir este archivo saturaría el dispositivo.")
+        case .formulaInjection: T3("Ouvert dans un tableur, il exécuterait une formule ou une commande.", "Opened in a spreadsheet, it would run a formula or a command.", "Abierto en una hoja de cálculo, ejecutaría una fórmula o un comando.")
         }
     }
 }
@@ -393,7 +436,11 @@ func isIP(_ host: String) -> Bool {
 /// The registrable domain (the last two labels): `a.b.example.com` → `example.com`.
 public func registrableDomain(_ host: String) -> String {
     let labels = host.lowercased().split(separator: ".")
-    return labels.suffix(2).joined(separator: ".")
+    let lastTwo = labels.suffix(2).joined(separator: ".")
+    if Brands.publicSuffixes.contains(lastTwo) {
+        return labels.suffix(3).joined(separator: ".")
+    }
+    return lastTwo
 }
 
 // MARK: - Engine
@@ -416,6 +463,12 @@ public enum Engine {
            registrableDomain(from) != registrableDomain(reply)
         {
             extra.append(Signal(rule: .replyToMismatch, evidence: "\(from) → \(reply)"))
+        }
+        // Each attachment, through Attachment Guard.
+        for attachment in message.attachments {
+            for signal in attachment.analysis.report.signals where !extra.contains(where: { $0.rule == signal.rule }) {
+                extra.append(signal)
+            }
         }
         return analyze(text: message.analysisText, extra: extra)
     }
@@ -459,10 +512,12 @@ public enum Engine {
             if isIP(lh) { push(.ipLink, h); risky = true }
             if url.lowercased().hasPrefix("http://") { push(.plainHttp, url); risky = true }
             if Keywords.oddTlds.contains(where: { lh.hasSuffix($0) }) { push(.oddTld, h); risky = true }
-            if lh.split(separator: ".").count >= 4 { push(.deepSubdomains, h); risky = true }
-            if let word = find(lh, Keywords.loginWords) { push(.loginWords, word); risky = true }
+            let official = Brands.official(lh) != nil
+            if lh.split(separator: ".").count >= 4 && !official { push(.deepSubdomains, h); risky = true }
+            if !official, let word = find(lh, Keywords.loginWords) { push(.loginWords, word); risky = true }
             if let brand = Keywords.brands.first(where: { containsWord(lower, $0) }),
-               !registrableDomain(lh).contains(brand), !isIP(lh)
+               !registrableDomain(lh).contains(brand), !isIP(lh),
+               Brands.official(lh) == nil
             {
                 push(.brandMismatch, "\(brand) → \(h)")
                 risky = true
