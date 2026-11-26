@@ -13,6 +13,9 @@
 #      - secret ASC_ISSUER_ID       the issuer ID shown above the keys
 #      - secret ASC_KEY_P8          the content of the .p8 file
 #      - secret APPLE_TEAM_ID       the team ID (developer.apple.com → Membership)
+#   5. If the first archive complains about the App Group: developer.apple.com →
+#      Identifiers → App Groups → + → group.com.maxlestage.mailzen (shared by the app
+#      and its share extension, for the senders and corrections the user teaches it).
 # Without them, the workflow stops with a notice.
 
 name: iOS to TestFlight

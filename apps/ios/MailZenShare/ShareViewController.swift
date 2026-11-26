@@ -8,6 +8,8 @@ import MailZenKit
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
+        // The senders and settings the user taught the app (App Group).
+        PersonalStore.shared.reload()
         view.backgroundColor = UIColor(red: 0.024, green: 0.043, blue: 0.102, alpha: 1)
         let root = ShareRoot(load: { [weak self] in await self?.loadInput() ?? nil },
                              close: { [weak self] in self?.extensionContext?.completeRequest(returningItems: nil) })
@@ -21,7 +23,7 @@ final class ShareViewController: UIViewController {
     }
 
     /// The first thing shared that MailZen can read.
-    private func loadInput() async -> (String, Report)? {
+    private func loadInput() async -> (String, Report, EmailMessage)? {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         let providers = items.flatMap { $0.attachments ?? [] }
         var texts: [String] = []
@@ -35,7 +37,7 @@ final class ShareViewController: UIViewController {
                     texts.append(ocr.text + "\n" + ocr.qrPayloads.joined(separator: "\n"))
                 } else {
                     let message = EmailMessage(data: data)
-                    return (message.subject ?? url.lastPathComponent, Engine.analyze(message))
+                    return (message.subject ?? url.lastPathComponent, Engine.analyze(message), message)
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
                       let url = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL
@@ -61,14 +63,14 @@ final class ShareViewController: UIViewController {
         let joined = texts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !joined.isEmpty else { return nil }
         let message = EmailMessage(raw: joined)
-        return (message.subject ?? String(joined.prefix(80)), Engine.analyze(message))
+        return (message.subject ?? String(joined.prefix(80)), Engine.analyze(message), message)
     }
 }
 
 struct ShareRoot: View {
-    let load: () async -> (String, Report)?
+    let load: () async -> (String, Report, EmailMessage)?
     let close: () -> Void
-    @State private var result: (String, Report)?
+    @State private var result: (String, Report, EmailMessage)?
     @State private var animated = false
     @State private var empty = false
 
@@ -76,7 +78,7 @@ struct ShareRoot: View {
         NavigationStack {
             Group {
                 if let result, animated {
-                    ReportView(report: result.1, title: result.0)
+                    ReportView(report: result.1, title: result.0, message: result.2)
                 } else if empty {
                     ContentUnavailableView(
                         tr("Rien à analyser", "Nothing to analyze", "Nada que analizar"),
