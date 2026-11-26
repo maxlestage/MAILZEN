@@ -63,9 +63,12 @@ def strip_accents(s):
 def merged():
     from corpus_more import MORE_INTENTS
     out = {k: {l: list(v) for l, v in langs.items()} for k, langs in INTENTS.items()}
-    for k, langs in MORE_INTENTS.items():
-        for l, v in langs.items():
-            out[k][l] += v
+    from intents_more import MORE
+    for extra in (MORE_INTENTS, MORE):
+        for k, langs in extra.items():
+            for l, v in langs.items():
+                out.setdefault(k, {}).setdefault(l, [])
+                out[k][l] += v
     return out
 
 

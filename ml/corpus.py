@@ -330,8 +330,9 @@ HEADER = {
 
 def merged():
     from corpus_more import MORE_SCAMS, MORE_LEGIT, EXTRA_SCAMS
+    from corpus_families import FAMILIES
     t = {c: {l: list(v) for l, v in langs.items()} for c, langs in T.items()}
-    for c, langs in list(MORE_SCAMS.items()) + list(EXTRA_SCAMS.items()):
+    for c, langs in list(MORE_SCAMS.items()) + list(EXTRA_SCAMS.items()) + list(FAMILIES.items()):
         for l, v in langs.items():
             t[c][l] = t[c][l] + v
     g = {k: {l: list(v) for l, v in langs.items()} for k, langs in LEGIT.items()}

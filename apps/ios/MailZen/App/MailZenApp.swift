@@ -8,6 +8,11 @@ struct MailZenApp: App {
     @State private var mailbox = MailboxService.shared
     @AppStorage("onboarded") private var onboarded = false
 
+    init() {
+        // The user's settings and lists reach the engine before any analysis.
+        PersonalStore.shared.apply()
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {

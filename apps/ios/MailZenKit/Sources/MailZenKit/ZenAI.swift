@@ -6,16 +6,18 @@ import Foundation
 /// and says what it cannot know.
 public enum ZenAI {
     public enum Intent: String, CaseIterable, Sendable {
-        case why, sender, link, file, reply, verify, clicked, password, report, money, summary
+        case why, sender, link, file, reply, verify, clicked, password, report, money, summary, kind, block
     }
 
     /// The suggested questions, in the order of the content.
     public static var suggestions: [(Intent, T3)] {
-        let intents: [Intent] = [.why, .sender, .link, .file, .reply, .verify, .clicked, .password, .report, .money]
+        let intents: [Intent] = [.why, .kind, .sender, .link, .file, .reply, .verify, .clicked, .password, .report, .money, .block]
         return Array(zip(intents, Library.zenaiQuestions))
     }
 
     private static let keywords: [(Intent, [String])] = [
+        (.block, ["bloquer", "block", "bloquear", "supprimer", "delete", "borrar", "désabonner", "unsubscribe", "baja", "indésirable", "junk"]),
+        (.kind, ["type d'arnaque", "quelle arnaque", "kind of scam", "which scam", "tipo de estafa", "qué estafa", "genre"]),
         (.password, ["mot de passe", "password", "contraseña", "identifiant"]),
         (.money, ["argent", "rembours", "virement", "money", "refund", "dinero", "recuperar", "payé", "paid", "pagado"]),
         (.clicked, ["cliqué", "clicked", "clic", "click", "ouvert le lien", "hice clic"]),
@@ -83,7 +85,10 @@ public enum ZenAI {
                 tr("Verdict : \(verdict), \(report.score)/100, confiance \(report.confidenceLabel.fr.lowercased()).",
                    "Verdict: \(verdict), \(report.score)/100, \(report.confidenceLabel.en.lowercased()) confidence.",
                    "Veredicto: \(verdict), \(report.score)/100, confianza \(report.confidenceLabel.es.lowercased())."),
-            ] + modelLines(report) + [
+            ] + (report.trustedSender ? [tr("Vous avez indiqué faire confiance à cet expéditeur : j’ai abaissé le score, mais les signaux restent affichés.",
+                                              "You said you trust this sender: I lowered the score, but the signals stay visible.",
+                                              "Indicaste que confías en este remitente: he bajado la puntuación, pero las señales siguen visibles.")] : [])
+              + modelLines(report) + [
                 report.verdict.advice.localized,
                 tr("Posez-moi une question : pourquoi c’est suspect, qui est l’expéditeur, si le lien est dangereux…",
                    "Ask me a question: why it is suspicious, who the sender is, whether the link is dangerous…",
@@ -126,7 +131,16 @@ public enum ZenAI {
                 return [tr("Je n’ai trouvé aucun lien dans ce message.", "I found no link in this message.", "No he encontrado ningún enlace en este mensaje.")]
             }
             var lines = report.links.prefix(5).map { link in
-                (link.risky ? "⚠️ " : "✓ ") + link.host
+                var line = (link.risky ? "⚠️ " : "✓ ") + link.host
+                if Brands.official(link.host) != nil {
+                    line += tr(" — domaine officiel vérifié", " — verified official domain", " — dominio oficial verificado")
+                } else if let p = link.modelProbability {
+                    let pct = Int((p * 100).rounded())
+                    line += tr(" — modèle des liens : \(pct) % de ressemblance avec du phishing",
+                               " — link model: \(pct)% resemblance to phishing",
+                               " — modelo de enlaces: \(pct) % de parecido con phishing")
+                }
+                return line
             }
             let reasons = report.signals.filter { $0.rule.family == .link || $0.rule == .brandMismatch || $0.rule == .lookalike }
             if reasons.isEmpty {
@@ -177,6 +191,40 @@ public enum ZenAI {
             lines.append(tr("Passez par l’application officielle, le site que vous tapez vous-même, ou le numéro inscrit sur votre carte ou votre contrat. N’utilisez jamais les coordonnées données dans le message.",
                             "Use the official app, a website you type yourself, or the number on your card or contract. Never use the contact details given in the message.",
                             "Usa la app oficial, una web que escribas tú mismo o el número de tu tarjeta o contrato. Nunca uses los datos de contacto del mensaje."))
+            return lines
+        case .kind:
+            guard let m = report.model, m.probability >= 0.5 else {
+                return [tr("Mon modèle ne reconnaît pas ici une famille d’arnaque connue.",
+                           "My model does not recognize a known family of scam here.",
+                           "Mi modelo no reconoce aquí una familia de estafa conocida.")] + modelLines(report)
+            }
+            guard let c = m.category else {
+                return [tr("Le texte ressemble à des arnaques, mais à aucune famille en particulier : je ne veux pas deviner.",
+                           "The text looks like scams, but like no family in particular: I will not guess.",
+                           "El texto se parece a estafas, pero a ninguna familia en concreto: no quiero adivinar.")] + modelLines(report)
+            }
+            let cp = Int((m.categoryProbability * 100).rounded())
+            return [
+                tr("Cela ressemble surtout à : \(c.label.fr) (confiance \(cp) %).",
+                   "It mostly looks like: \(c.label.en) (\(cp)% confidence).",
+                   "Se parece sobre todo a: \(c.label.es) (confianza \(cp) %)."),
+                c.advice.localized,
+                tr("C’est une estimation de mon modèle entraîné : les preuves du rapport restent la référence.",
+                   "This is an estimate of my trained model: the evidence of the report remains the reference.",
+                   "Es una estimación de mi modelo entrenado: las pruebas del informe siguen siendo la referencia."),
+            ]
+        case .block:
+            var lines = [tr("Dans Mail : touchez l’expéditeur, puis « Bloquer ce contact », ou déplacez le message dans « Indésirables ». Ensuite, supprimez-le.",
+                            "In Mail: tap the sender, then “Block this Contact”, or move the message to “Junk”. Then delete it.",
+                            "En Mail: toca el remitente y luego «Bloquear este contacto», o mueve el mensaje a «No deseado». Después bórralo.")]
+            lines.append(tr("Dans MailZen, « MailZen s’est trompé ? » en bas du rapport vous permet de bloquer cet expéditeur : ses prochains messages seront signalés d’office.",
+                            "In MailZen, “Did MailZen get it wrong?” at the bottom of the report lets you block this sender: their next messages will be flagged right away.",
+                            "En MailZen, «¿MailZen se ha equivocado?» al final del informe te permite bloquear a este remitente: sus próximos mensajes se señalarán directamente."))
+            if report.verdict == .suspicious || report.verdict == .danger {
+                lines.append(tr("N’utilisez pas le lien de désabonnement d’un message suspect : il confirme que votre adresse est active.",
+                                "Do not use the unsubscribe link of a suspicious message: it confirms your address is active.",
+                                "No uses el enlace de baja de un mensaje sospechoso: confirma que tu dirección está activa."))
+            }
             return lines
         case .clicked:
             return steps(Library.scenarios[0])

@@ -408,6 +408,7 @@ public enum Library {
 
     public static let zenaiQuestions: [T3] = [
         T3("Pourquoi ce mail est-il suspect ?", "Why is this email suspicious?", "¿Por qué es sospechoso este correo?"),
+        T3("Quel type d’arnaque est-ce ?", "What kind of scam is it?", "¿Qué tipo de estafa es?"),
         T3("Qui est réellement l’expéditeur ?", "Who is the real sender?", "¿Quién es realmente el remitente?"),
         T3("Est-ce que le lien est dangereux ?", "Is the link dangerous?", "¿Es peligroso el enlace?"),
         T3("Est-ce que je peux ouvrir le fichier ?", "Can I open the file?", "¿Puedo abrir el archivo?"),
@@ -417,6 +418,7 @@ public enum Library {
         T3("Que faire si j’ai donné mon mot de passe ?", "What if I gave my password?", "¿Qué hago si di mi contraseña?"),
         T3("Comment signaler ce mail ?", "How do I report this email?", "¿Cómo denuncio este correo?"),
         T3("Est-ce que je peux récupérer mon argent ?", "Can I get my money back?", "¿Puedo recuperar mi dinero?"),
+        T3("Comment bloquer cet expéditeur ?", "How do I block this sender?", "¿Cómo bloqueo a este remitente?"),
     ]
 
     public static let privacy: [T3] = [
