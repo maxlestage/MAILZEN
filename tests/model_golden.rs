@@ -3,7 +3,10 @@
 use mailzen_site::models::{LinearModel, text_features, url_features};
 
 fn load(name: &str) -> LinearModel {
-    let path = format!("{}/public/assets/models/{name}.mzm", env!("CARGO_MANIFEST_DIR"));
+    let path = format!(
+        "{}/public/assets/models/{name}.mzm",
+        env!("CARGO_MANIFEST_DIR")
+    );
     LinearModel::parse(&std::fs::read(path).expect("model file")).expect("valid model")
 }
 
@@ -12,6 +15,7 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 #[test]
+#[rustfmt::skip]
 fn the_text_models_match_the_training() {
     let scam = load("scam");
     let category = load("category");
@@ -39,6 +43,7 @@ fn the_text_models_match_the_training() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn the_link_model_matches_the_training() {
     let url = load("url");
     assert!(close(url.probabilities(&url_features("https://www.paypal.com/fr/signin"))[0], 0.136983), "https://www.paypal.com/fr/signin");
