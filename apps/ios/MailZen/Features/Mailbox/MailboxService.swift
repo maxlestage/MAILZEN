@@ -95,6 +95,9 @@ final class MailboxService {
 
     /// Tries the address and password, analyzes the last messages, then adds the mailbox.
     func connect(email: String, password: String, host: String, port: UInt16 = 993) async -> Bool {
+        let provider = MailProvider.all.first { $0.host == host } ?? MailProvider.guess(for: email)
+        let password = provider.normalizedPassword(password)
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         lastError = nil
         checking = true
         defer { checking = false }
@@ -112,7 +115,7 @@ final class MailboxService {
             Self.scheduleRefresh()
             return true
         } catch {
-            lastError = Self.describe(error)
+            lastError = Self.describe(error, provider: provider)
             return false
         }
     }
@@ -160,7 +163,7 @@ final class MailboxService {
                 Self.record(check, notify: true)
                 found += check.items.count
             } catch {
-                lastError = account.email + " : " + Self.describe(error)
+                lastError = account.email + " : " + Self.describe(error, provider: MailProvider.all.first { $0.host == account.host })
             }
         }
         lastFound = found
@@ -195,8 +198,11 @@ final class MailboxService {
         return []
     }
 
-    nonisolated static func describe(_ error: Error) -> String {
-        if let imap = error as? IMAPError { return imap.message.localized }
+    nonisolated static func describe(_ error: Error, provider: MailProvider? = nil) -> String {
+        if let imap = error as? IMAPError {
+            if imap.isAuthenticationFailure { return (provider ?? MailProvider.all[3]).authenticationHelp.localized }
+            return imap.message.localized
+        }
         return error.localizedDescription
     }
 
