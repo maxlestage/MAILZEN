@@ -327,6 +327,16 @@ public final class Models: Sendable {
             .flatMap { try? JSONDecoder().decode(ModelManifest.self, from: $0) }
     }
 
+    /// Loads the models and what on-device learning needs, so that the first analysis is
+    /// instant (the app does it while its boot screen shows). Whether the models are there.
+    @discardableResult
+    public static func warmUp() -> Bool {
+        guard let models = shared else { return false }
+        _ = Anchors.features.count
+        _ = models.scamProbability("MailZen")
+        return true
+    }
+
     /// The probability that a link leads to phishing.
     public func linkProbability(_ url: String) -> Double { links.probabilities(features: URLFeaturizer.features(url))[0] }
 
