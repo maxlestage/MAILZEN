@@ -95,7 +95,7 @@ jobs:
           fi
       - uses: actions/checkout@v7
         if: steps.config.outputs.ready == 'true'
-      - name: Register the bundle IDs and App Groups
+      - name: Register the bundle IDs, clean up old certificates
         id: asc
         if: steps.config.outputs.ready == 'true'
         run: |
