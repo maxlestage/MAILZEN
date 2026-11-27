@@ -4,7 +4,11 @@
 - enables the App Groups capability on both (the app and the extension share the
   senders and corrections the user teaches MailZen);
 - checks that the app exists in App Store Connect (Apple does not let the API create it:
-  App Store Connect → Apps → + → New app, once).
+  App Store Connect → Apps → + → New app, once);
+- revokes the signing certificates that earlier runs created ("Created via API"): each
+  run starts on a fresh Mac, so automatic signing makes new ones, and Apple caps how many
+  an account may hold. Only those are touched; builds already sent to TestFlight keep
+  working.
 
 Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the content of the .p8 key), and
 optionally APPLE_TEAM_ID: without it, the team is read from Apple (the App ID prefix of
@@ -60,7 +64,24 @@ def ensure_bundle(identifier, name):
     return seed
 
 
+def cleanup_certificates():
+    certs = call("GET", "/certificates", query={"limit": 200})["data"]
+    revoked = 0
+    for c in certs:
+        a = c["attributes"]
+        label = f"{a.get('name') or ''} {a.get('displayName') or ''}"
+        if "Created via API" not in label:
+            continue
+        if a.get("certificateType") not in ("DEVELOPMENT", "IOS_DEVELOPMENT", "DISTRIBUTION", "IOS_DISTRIBUTION"):
+            continue
+        call("DELETE", f"/certificates/{c['id']}")
+        revoked += 1
+        print(f"Certificate revoked: {a.get('name')} ({a.get('certificateType')}, expires {(a.get('expirationDate') or '')[:10]})")
+    print(f"Certificates: {revoked} created by earlier runs revoked, {len(certs) - revoked} others left untouched")
+
+
 def main():
+    cleanup_certificates()
     seeds = [ensure_bundle(identifier, name) for identifier, name in BUNDLES]
     team = os.environ.get("APPLE_TEAM_ID", "").strip() or next((s for s in seeds if s), "")
     if not team:
