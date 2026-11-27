@@ -7,6 +7,8 @@ struct MailZenApp: App {
     @State private var model = AppModel()
     @State private var mailbox = MailboxService.shared
     @AppStorage("onboarded") private var onboarded = false
+    /// The boot screen ran (once per launch).
+    @State private var booted = false
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -17,10 +19,14 @@ struct MailZenApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if onboarded {
-                    RootView()
+                if !booted {
+                    BootView { withAnimation(.easeOut(duration: 0.4)) { booted = true } }
+                        .transition(.opacity)
+                } else if onboarded {
+                    RootView().transition(.opacity)
                 } else {
                     OnboardingView { withAnimation(.spring) { onboarded = true } }
+                        .transition(.opacity)
                 }
             }
             .environment(model)
