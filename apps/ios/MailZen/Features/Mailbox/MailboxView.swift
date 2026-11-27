@@ -180,7 +180,7 @@ struct AddMailboxForm: View {
             if provider.id == "other" {
                 field(tr("Serveur IMAP (ex. imap.example.com)", "IMAP server (e.g. imap.example.com)", "Servidor IMAP (p. ej. imap.example.com)"), text: $host, secure: false)
             }
-            field(tr("Mot de passe pour app", "App-specific password", "Contraseña para apps"), text: $password, secure: !reveal, password: true)
+            field(tr("Mot de passe pour app (pas celui du compte)", "App-specific password (not the account one)", "Contraseña para apps (no la de la cuenta)"), text: $password, secure: !reveal, password: true)
                 .overlay(alignment: .bottomTrailing) {
                     Button { reveal.toggle() } label: {
                         Image(systemName: reveal ? "eye.slash" : "eye").foregroundStyle(Theme.muted).padding(14)
@@ -243,10 +243,12 @@ struct AddMailboxForm: View {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
             Group {
                 if secure {
-                    SecureField("", text: text).textContentType(.password)
+                    // No password AutoFill: iOS would offer the account password (Google,
+                    // Apple…), which the server refuses; an app password is needed.
+                    SecureField("", text: text).textContentType(nil)
                 } else {
                     TextField("", text: text)
-                        .textContentType(password ? .password : .emailAddress)
+                        .textContentType(password ? nil : .emailAddress)
                         .keyboardType(password ? .asciiCapable : .emailAddress)
                 }
             }
