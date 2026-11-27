@@ -152,6 +152,7 @@ struct AddMailboxForm: View {
     @State private var password = ""
     @State private var provider = MailProvider.all[0]
     @State private var host = ""
+    @State private var reveal = false
     let onDone: () -> Void
 
     var body: some View {
@@ -179,7 +180,17 @@ struct AddMailboxForm: View {
             if provider.id == "other" {
                 field(tr("Serveur IMAP (ex. imap.example.com)", "IMAP server (e.g. imap.example.com)", "Servidor IMAP (p. ej. imap.example.com)"), text: $host, secure: false)
             }
-            field(tr("Mot de passe pour app", "App-specific password", "Contraseña para apps"), text: $password, secure: true)
+            field(tr("Mot de passe pour app", "App-specific password", "Contraseña para apps"), text: $password, secure: !reveal, password: true)
+                .overlay(alignment: .bottomTrailing) {
+                    Button { reveal.toggle() } label: {
+                        Image(systemName: reveal ? "eye.slash" : "eye").foregroundStyle(Theme.muted).padding(14)
+                    }
+                    .accessibilityLabel(reveal ? tr("Masquer", "Hide", "Ocultar") : tr("Afficher", "Show", "Mostrar"))
+                }
+            if provider.id != "other", password.contains(where: \.isWhitespace) {
+                Label(tr("Les espaces du mot de passe seront retirés : ils ne servent qu’à le lire.", "The spaces of the password will be removed: they are only there to read it.", "Los espacios de la contraseña se quitarán: solo sirven para leerla."),
+                      systemImage: "checkmark.circle").font(.caption).foregroundStyle(Theme.safe)
+            }
             VStack(alignment: .leading, spacing: 6) {
                 Label(provider.note.localized, systemImage: "key.fill").font(.footnote).foregroundStyle(Theme.muted)
                 if let help = provider.passwordHelp {
@@ -209,7 +220,16 @@ struct AddMailboxForm: View {
             .buttonStyle(PrimaryButtonStyle())
             .disabled(mailbox.checking || !email.contains("@") || password.isEmpty || (provider.id == "other" && host.isEmpty))
             if let error = mailbox.lastError {
-                Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Theme.suspicious)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Theme.suspicious)
+                    if let help = provider.passwordHelp {
+                        Link(destination: help) {
+                            Label(tr("Créer un nouveau mot de passe pour app", "Create a new app password", "Crear una nueva contraseña para apps"), systemImage: "arrow.up.right.square")
+                                .font(.footnote.weight(.semibold))
+                        }
+                    }
+                }
+                .card(tint: Theme.suspicious.opacity(0.4), padding: 12)
             }
             Text(tr("Outlook et Hotmail demandent une connexion Microsoft dédiée, prévue dans une prochaine version.",
                     "Outlook and Hotmail require a dedicated Microsoft sign-in, planned for a future version.",
@@ -218,14 +238,16 @@ struct AddMailboxForm: View {
         }
     }
 
-    private func field(_ title: String, text: Binding<String>, secure: Bool) -> some View {
+    private func field(_ title: String, text: Binding<String>, secure: Bool, password: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(Theme.muted)
             Group {
                 if secure {
                     SecureField("", text: text).textContentType(.password)
                 } else {
-                    TextField("", text: text).textContentType(.emailAddress).keyboardType(.emailAddress)
+                    TextField("", text: text)
+                        .textContentType(password ? .password : .emailAddress)
+                        .keyboardType(password ? .asciiCapable : .emailAddress)
                 }
             }
             .textInputAutocapitalization(.never)

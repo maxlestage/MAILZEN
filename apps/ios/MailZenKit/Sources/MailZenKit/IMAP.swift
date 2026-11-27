@@ -27,6 +27,14 @@ public enum IMAPError: Error, Equatable, Sendable {
         case .timeout: T3("Le serveur ne répond pas.", "The server does not answer.", "El servidor no responde.")
         }
     }
+
+    /// The server refused the address or the password.
+    public var isAuthenticationFailure: Bool {
+        guard case .rejected(let text) = self else { return false }
+        let t = text.lowercased()
+        return ["authenticationfailed", "invalid credentials", "authentication failed", "login failed",
+                "invalid login", "incorrect", "authorizationfailed", "web login required"].contains { t.contains($0) }
+    }
 }
 
 /// A line of an IMAP response, with the literals (`{n}` followed by n bytes) it carries.
@@ -235,6 +243,38 @@ public struct MailProvider: Identifiable, Hashable, Sendable {
                      "Your provider’s IMAP server, encrypted connection (port 993).",
                      "El servidor IMAP de tu proveedor, conexión cifrada (puerto 993).")),
     ]
+
+    /// The password as the server expects it. App passwords are shown with spaces
+    /// (“abcd efgh ijkl mnop”) that are not part of them: they are removed for the services
+    /// that use such passwords.
+    public func normalizedPassword(_ password: String) -> String {
+        switch id {
+        case "gmail", "yahoo", "icloud": password.filter { !$0.isWhitespace }
+        default: password.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// What to check when the server refuses the address or the password.
+    public var authenticationHelp: T3 {
+        switch id {
+        case "gmail":
+            T3("Gmail a refusé l’adresse ou le mot de passe. Vérifiez l’adresse, puis utilisez un mot de passe d’application de 16 lettres (créé dans votre compte Google, validation en deux étapes activée), pas le mot de passe de votre compte. Les comptes Google d’entreprise ou d’école peuvent les interdire.",
+               "Gmail refused the address or the password. Check the address, then use a 16-letter app password (created in your Google Account, with 2-Step Verification on), not your account password. Work or school Google accounts may forbid them.",
+               "Gmail rechazó la dirección o la contraseña. Comprueba la dirección y usa una contraseña de aplicación de 16 letras (creada en tu cuenta de Google, con la verificación en dos pasos activada), no la contraseña de tu cuenta. Las cuentas de Google de empresa o escuela pueden prohibirlas.")
+        case "icloud":
+            T3("iCloud a refusé l’adresse ou le mot de passe. Utilisez votre adresse @icloud.com et un mot de passe pour app (xxxx-xxxx-xxxx-xxxx) créé sur account.apple.com, pas le mot de passe de votre identifiant Apple.",
+               "iCloud refused the address or the password. Use your @icloud.com address and an app-specific password (xxxx-xxxx-xxxx-xxxx) created at account.apple.com, not your Apple Account password.",
+               "iCloud rechazó la dirección o la contraseña. Usa tu dirección @icloud.com y una contraseña para apps (xxxx-xxxx-xxxx-xxxx) creada en account.apple.com, no la de tu cuenta de Apple.")
+        case "yahoo":
+            T3("Yahoo a refusé l’adresse ou le mot de passe. Utilisez un mot de passe d’application généré dans la sécurité du compte Yahoo, pas votre mot de passe habituel.",
+               "Yahoo refused the address or the password. Use an app password generated in the Yahoo account security settings, not your usual password.",
+               "Yahoo rechazó la dirección o la contraseña. Usa una contraseña de aplicación generada en la seguridad de la cuenta de Yahoo, no tu contraseña habitual.")
+        default:
+            T3("Le serveur a refusé l’adresse ou le mot de passe. Vérifiez-les, ainsi que l’adresse du serveur IMAP ; certains fournisseurs demandent un mot de passe d’application.",
+               "The server refused the address or the password. Check them, and the IMAP server address; some providers require an app password.",
+               "El servidor rechazó la dirección o la contraseña. Compruébalos, así como la dirección del servidor IMAP; algunos proveedores exigen una contraseña de aplicación.")
+        }
+    }
 
     /// The provider of an address, from its domain.
     public static func guess(for email: String) -> MailProvider {

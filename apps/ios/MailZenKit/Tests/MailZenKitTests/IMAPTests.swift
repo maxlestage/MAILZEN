@@ -99,6 +99,16 @@ actor FakeServer: IMAPTransport {
         }
     }
 
+    @Test func appPasswordsAreCleanedAndRefusalsExplained() {
+        let gmail = MailProvider.guess(for: "a@gmail.com")
+        #expect(gmail.normalizedPassword(" abcd efgh ijkl mnop ") == "abcdefghijklmnop")
+        #expect(MailProvider.guess(for: "a@icloud.com").normalizedPassword("abcd-efgh-ijkl-mnop") == "abcd-efgh-ijkl-mnop")
+        #expect(MailProvider.guess(for: "a@orange.fr").normalizedPassword(" mot de passe ") == "mot de passe")
+        #expect(IMAPError.rejected("[AUTHENTICATIONFAILED] Invalid credentials (Failure)").isAuthenticationFailure)
+        #expect(!IMAPError.rejected("[UNAVAILABLE] Try later").isAuthenticationFailure)
+        #expect(gmail.authenticationHelp.fr.contains("16 lettres"))
+    }
+
     @Test func providersAreGuessedFromTheAddress() {
         #expect(MailProvider.guess(for: "a@icloud.com").host == "imap.mail.me.com")
         #expect(MailProvider.guess(for: "a@gmail.com").host == "imap.gmail.com")
